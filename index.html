@@ -1,0 +1,2198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>DartFeed AI — iPhone Camera Test</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; overflow-x: hidden; }
+  body { margin: 0; background: #0b0d10; color: #e8ecf1; font-family: -apple-system, system-ui, sans-serif; touch-action: manipulation; }
+  .banner { background: #1a2a1a; color: #9ee78a; padding: 8px 12px; font-size: 12px; text-align: center; }
+  .app { max-width: 900px; margin: 0 auto; }
+  h1 { font-size: 15px; margin: 10px 12px; letter-spacing: 0.06em; }
+  .stage { position: relative; width: 100%; background: #000; }
+  video, img#photo-display { width: 100%; display: block; background: #000; }
+  canvas#overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+  .status-bar { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 12px; font-size: 13px; }
+  .pill { background: #171b21; border: 1px solid #2a3038; border-radius: 6px; padding: 6px 10px; }
+  .pill b { color: #7fd3ff; }
+  .pill.ok b { color: #6ee787; }
+  .pill.bad b { color: #ff6e6e; }
+  .pill.warn b { color: #ffcf7a; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; padding: 4px 12px 12px; align-items: center; }
+  button { background: #1c2733; color: #e8ecf1; border: 1px solid #34404d; border-radius: 8px; padding: 13px 16px; font-size: 14px; min-height: 44px; }
+  button.primary { background: #2a56c6; border-color: #3a66d6; }
+  button:disabled { opacity: 0.45; }
+  button.active { background: #3a66d6; }
+  label { font-size: 14px; display: flex; align-items: center; gap: 6px; min-height: 44px; }
+  input[type=checkbox], input[type=radio] { width: 20px; height: 20px; }
+  select { background: #1c2733; color: #e8ecf1; border: 1px solid #34404d; border-radius: 8px; padding: 10px 12px; font-size: 14px; min-height: 44px; }
+  select:disabled { opacity: 0.45; }
+  .zoom-row { display: flex; align-items: center; gap: 10px; padding: 0 12px 12px; }
+  .zoom-row input[type=range] { flex: 1; height: 32px; }
+  .darts-list { padding: 0 12px 12px; font-size: 13px; }
+  .darts-list div { padding: 3px 0; color: #cfe8ff; }
+  #debug-panel, #compare-panel { padding: 10px 12px; font: 12px/1.5 ui-monospace, monospace; background: #10141a; border-top: 1px solid #2a3038; overflow-x: auto; white-space: pre-wrap; }
+  #debug-panel .row { display: flex; justify-content: space-between; gap: 10px; border-bottom: 1px dashed #232a33; padding: 2px 0; }
+  #debug-panel .row span:first-child { color: #8a97a6; }
+  #debug-panel .row span:last-child { text-align: right; word-break: break-word; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+
+<div class="banner">DartFeed AI — standalone iPhone camera test. DartFeed's own model only (no Dart Sense, no AutoDarts, no local server required).</div>
+
+<div class="app">
+
+<h1>DARTFEED AI — CAMERA TEST</h1>
+
+<div class="stage">
+  <video id="video" autoplay playsinline muted></video>
+  <img id="photo-display" class="hidden" alt="Loaded photo">
+  <canvas id="overlay"></canvas>
+</div>
+
+<div class="status-bar">
+  <div class="pill" id="pill-camera">CAMERA: <b id="stat-camera">NOT STARTED</b></div>
+  <div class="pill hidden" id="pill-source">SOURCE: <b id="stat-source">CAMERA</b></div>
+  <div class="pill" id="pill-board">BOARD: <b id="stat-board">SEARCHING</b></div>
+  <div class="pill" id="pill-calibration">CALIBRATION: <b id="stat-calibration">NOT COMPLETE</b></div>
+  <div class="pill" id="pill-camera-lock">CAMERA LOCK: <b id="stat-camera-lock">UNLOCKED</b></div>
+  <div class="pill" id="pill-dart-detection">DART DETECTION: <b id="stat-dart-detection">LOCKED</b></div>
+  <div class="pill" id="pill-model">DARTFEED MODEL: <b id="stat-model">LOADING</b></div>
+  <div class="pill" id="pill-active-model">ACTIVE MODEL: <b id="stat-active-model">Synthetic 600 seed 22</b></div>
+  <div class="pill">DARTS: <b id="stat-dart-count">0</b></div>
+</div>
+
+<div class="controls">
+  <button id="btn-start" class="primary">START CAMERA</button>
+  <button id="btn-load-photo" title="Loads a still photo instead of the live camera -- no camera permission needed, useful for testing against a known photo.">LOAD PHOTO</button>
+  <input type="file" id="photo-input" accept="image/*" class="hidden">
+  <button id="btn-calibrate" disabled>CALIBRATE</button>
+  <button id="btn-lock-camera" class="primary" disabled title="Freezes the current calibration and board geometry, then enables live dart detection. Only press this once the phone will not move again.">LOCK CAMERA</button>
+  <button id="btn-unlock-camera" disabled title="Stops dart detection immediately, clears the current calibration, and returns to setup so you can recalibrate.">UNLOCK / RE-CALIBRATE</button>
+  <button id="btn-reset" disabled>RESET</button>
+  <button id="btn-debug">DEBUG</button>
+  <button id="btn-hue-diag" title="Visualizes the raw red/green hue-walk sample points used for ring detection, to diagnose why calibration is or isn't finding ring points.">HUE DIAG</button>
+  <button id="btn-export" disabled title="Downloads a zip with the current image plus a JSON log of everything detected, to send for diagnosis">EXPORT</button>
+</div>
+
+<div class="controls" id="model-selector-row">
+  <label for="model-select" style="color:#8a97a6">Detection model:</label>
+  <select id="model-select" title="Switch the dart-tip model. Calibration, board geometry, thresholds and matching are identical for both; only the network weights differ.">
+    <option value="original">Original v0.4</option>
+    <option value="syn600" selected>Synthetic 600 seed 22 (default)</option>
+  </select>
+  <span id="model-select-status" style="color:#8a97a6; font-size:13px"></span>
+</div>
+
+<div class="controls" id="confidence-row">
+  <label for="conf-select" style="color:#8a97a6">Min dart confidence:</label>
+  <select id="conf-select" title="A detection is only shown if the model's confidence is at least this. Higher = fewer phantom detections on the bare board, but more real darts missed.">
+    <option value="0.70">0.70 (most sensitive)</option>
+    <option value="0.75" selected>0.75 (default)</option>
+    <option value="0.80">0.80</option>
+    <option value="0.85">0.85</option>
+    <option value="0.90">0.90 (strictest)</option>
+  </select>
+  <span style="color:#8a97a6; font-size:13px">higher = fewer phantoms, more missed darts</span>
+</div>
+
+<div id="dart-model-panel" style="padding:8px 12px; font:12px/1.5 ui-monospace, monospace; background:#10141a; border-top:1px solid #2a3038; white-space:pre-wrap;">DART MODEL
+Status: LOCKED
+Detections: 0</div>
+
+<div class="controls">
+  <label title="Hides just the yellow score-value numbers. The ring/wedge boundary wires stay visible either way.">
+    <input type="checkbox" id="chk-show-score-numbers" checked> Show score numbers
+  </label>
+</div>
+
+<div class="controls">
+  <label title="Calibrates by itself as soon as the board is found, then locks the camera once the calibration has stayed identical for about 2 seconds. Untick to use the CALIBRATE and LOCK CAMERA buttons manually.">
+    <input type="checkbox" id="chk-auto-calibrate" checked> Auto calibrate + lock
+  </label>
+  <span id="auto-status" style="color:#8a97a6; font-size:13px">Auto: searching for the board…</span>
+</div>
+
+<div class="controls">
+  <span style="color:#8a97a6">Calibration mode:</span>
+  <label title="Fits a homography from all 20 detected ring-colour transitions.">
+    <input type="radio" name="calibration-mode" id="radio-calib-20point" value="20point" checked> 20-Point
+  </label>
+  <label title="Fits a homography from 4 known AutoDarts-style landmarks (1/20, 6/10, 3/19, 11/14) instead of all 20 ring points.">
+    <input type="radio" name="calibration-mode" id="radio-calib-4point" value="4point"> 4-Point
+  </label>
+</div>
+<div class="controls">
+  <button id="btn-compare-both">COMPARE BOTH CALIBRATIONS</button>
+</div>
+<div id="compare-panel" class="hidden"></div>
+
+<div class="zoom-row hidden" id="zoom-row">
+  <span>Zoom</span>
+  <input type="range" id="zoom-slider" min="1" max="1" step="0.1" value="1">
+  <b id="zoom-value">1.0x</b>
+</div>
+<div class="zoom-row hidden" id="zoom-unsupported"><span style="color:#8a97a6">Zoom not supported on this camera/browser.</span></div>
+
+<div class="darts-list" id="darts-list">No darts detected.</div>
+
+<div id="debug-panel" class="hidden"></div>
+
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  function $(id) { return document.getElementById(id); }
+
+  // =========================================================================
+  // 0. DETECTOR CONTRACT
+  // A dart detection is always: { x, y, confidence, type: 'dart-tip' }.
+  // Board geometry / calibration / homography / scoring below never know or
+  // care which model produced it -- they only ever read x/y/confidence/type.
+  // This page wires in exactly ONE detector (DartFeedTipModelAdapter,
+  // below); no other detector and no fallback path exists.
+  // =========================================================================
+
+  // =========================================================================
+  // 1. DARTFEED TIP MODEL (DartTipHeatmapNet, homegrown, trained from
+  // scratch by this project -- NOT a third-party model, no licence
+  // restriction on distributing it). Ported verbatim from the local test
+  // bench's own adapter; only the weight-loading path changed, from an
+  // embedded base64 blob to a relative-path fetch so this page can be
+  // served as plain static files from GitHub Pages.
+  //   Architecture: DartTipHeatmapNet -- 177,745 parameters, single-channel
+  //     heatmap output.
+  //   Input: 320x416 RGB, DIRECT resize (stretched, not letterboxed),
+  //     scaled to [0,1] then ImageNet-normalised.
+  //   Output: (1,1,104,80) heatmap logits (sigmoid applied here).
+  //   Decode: greedy local-maxima extraction, NMS radius 4, capped at 3
+  //     tips, confidence threshold 0.7 (see this project's own
+  //     V0.4_MULTI_DART.md threshold sweep for why 0.7 was chosen).
+  // =========================================================================
+  var DartFeedTipModelAdapter = (function () {
+    var INPUT_W = 320, INPUT_H = 416;
+    var OUTPUT_STRIDE = 4;
+    var HEATMAP_H = 104, HEATMAP_W = 80;
+    var NMS_RADIUS = 4;
+    // Minimum peak confidence for a detection. v0.4's own threshold sweep chose 0.7,
+    // but phantom detections on a bare board sit just above 0.7 (measured: 3-4
+    // phantoms in 16 empty-board photos at 0.70, none at 0.75) while real darts
+    // mostly score higher, so the default here is 0.75. Adjustable on the page.
+    var DEFAULT_CONFIDENCE_THRESHOLD = 0.75;
+    var confidenceThreshold = DEFAULT_CONFIDENCE_THRESHOLD;
+    var MAX_DARTS = 3;
+    var MEAN = [0.485, 0.456, 0.406], STD = [0.229, 0.224, 0.225];
+    // Relative to this HTML file's own location -- works unmodified from
+    // GitHub Pages, a plain local static-file server, or file:// (Chrome;
+    // iOS Safari requires https:// or localhost for camera access
+    // regardless of this path).
+    // MODEL REGISTRY -- both entries are the SAME network (DartTipHeatmapNet,
+    // identical input/output tensors, preprocessing, decode and thresholds);
+    // only the weights differ. The Synthetic 600 model is the default; the
+    // original v0.4 stays available in the selector and is the automatic
+    // fallback if the default cannot be loaded. Each entry carries a version +
+    // expected SHA-256 so a stale browser/CDN cache can never silently serve the
+    // wrong weights: model URLs are cache-busted with ?v=<hash prefix> where
+    // versioned, fetched with cache:'no-store', and hash-checked before use.
+    var MODELS = {
+      original: {
+        label: 'Original v0.4', adapterName: 'DartFeed Tip v0.4', version: 'v0.4-original',
+        url: './models/v0.4_best.onnx',
+        sha256: '3f40407bef9ded0e32e245c4b5a3edaf6f417a0e4e906c3a2de35b0023641937'
+      },
+      syn600: {
+        label: 'Synthetic 600 seed 22', adapterName: 'DartFeed Tip (v0.4 recipe, +600 synthetic, seed 22)', version: 'syn600-seed22-v1',
+        url: './models/dartfeed_syn600_seed22.onnx?v=a4d91face26f',
+        sha256: 'a4d91face26ff57f3322ef42428d037e3e3b01efbf7ff3863cae2fe1b373b2f4'
+      }
+    };
+    var DEFAULT_MODEL_KEY = 'syn600';
+    var FALLBACK_MODEL_KEY = 'original';
+    var loadNote = '';
+    var sessions = {};
+    var activeKey = DEFAULT_MODEL_KEY;
+
+    var session = null;
+    var preCanvas = null, preCtx = null;
+    var ortLoadPromise = null;
+    var ORT_URL = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/ort.min.js';
+
+    function ensureOrt() {
+      if (window.ort) return Promise.resolve();
+      if (ortLoadPromise) return ortLoadPromise;
+      ortLoadPromise = new Promise(function (resolve, reject) {
+        var s = document.createElement('script');
+        s.src = ORT_URL;
+        s.onload = resolve;
+        s.onerror = function () { reject(new Error('Could not load onnxruntime-web from CDN.')); };
+        document.head.appendChild(s);
+      });
+      return ortLoadPromise;
+    }
+
+    // Boot load: the default model through the same hash-checked path as every
+    // switch; if that fails (missing/stale/corrupt file) fall back to the
+    // original so the page still works, and say so.
+    function load() {
+      return setActiveModel(DEFAULT_MODEL_KEY).catch(function (err) {
+        if (DEFAULT_MODEL_KEY === FALLBACK_MODEL_KEY) throw err;
+        console.error('Default model failed to load, falling back:', err);
+        loadNote = 'could not load ' + MODELS[DEFAULT_MODEL_KEY].label + ' (' + err.message + ') — using ' + MODELS[FALLBACK_MODEL_KEY].label;
+        return setActiveModel(FALLBACK_MODEL_KEY);
+      });
+    }
+
+    function hex(buf) {
+      var b = new Uint8Array(buf), s = '';
+      for (var i = 0; i < b.length; i++) s += (b[i] < 16 ? '0' : '') + b[i].toString(16);
+      return s;
+    }
+
+    // Loads (once) and caches the session for a registry entry. Used for model
+    // switching only; the default model's boot path in load() is unchanged.
+    function loadModel(key) {
+      var info = MODELS[key];
+      if (!info) return Promise.reject(new Error('Unknown model: ' + key));
+      if (sessions[key]) return Promise.resolve(sessions[key]);
+      return ensureOrt().then(function () {
+        window.ort.env.wasm.numThreads = 1;
+        return fetch(info.url, { cache: 'no-store' });
+      }).then(function (resp) {
+        if (!resp.ok) throw new Error('HTTP ' + resp.status + ' fetching ' + info.url);
+        return resp.arrayBuffer();
+      }).then(function (buf) {
+        var verify = (window.crypto && window.crypto.subtle)
+          ? window.crypto.subtle.digest('SHA-256', buf).then(function (d) {
+              var h = hex(d);
+              if (h !== info.sha256) throw new Error('model file does not match expected version ' + info.version + ' (got sha256 ' + h.slice(0, 12) + ', expected ' + info.sha256.slice(0, 12) + ') -- stale or wrong file');
+            })
+          : Promise.resolve();   // non-secure context: no SubtleCrypto, rely on the cache-busted URL + no-store
+        return verify.then(function () {
+          return window.ort.InferenceSession.create(new Uint8Array(buf), { executionProviders: ['wasm'] });
+        });
+      }).then(function (sess) {
+        sessions[key] = sess;
+        return sess;
+      });
+    }
+
+    function setActiveModel(key) {
+      return loadModel(key).then(function (sess) {
+        session = sess;
+        activeKey = key;
+      });
+    }
+
+    function getActiveModel() {
+      var m = MODELS[activeKey];
+      return { key: activeKey, label: m.label, version: m.version, sha256: m.sha256, url: m.url };
+    }
+
+    function isReady() { return !!session; }
+
+    // ---- ANTIALIASED DOWNSCALE to 320x416 --------------------------------
+    // The model was trained on PIL's img.resize((320,416), BILINEAR), which for a
+    // big reduction is an ANTIALIASED triangle filter. A single canvas drawImage
+    // from a full-resolution camera frame is not (it just skips pixels), and the
+    // aliasing it creates on the board's wires/sisal produces extra spurious
+    // detections. So: halve with the canvas while the result stays >= 2x the
+    // target (an exact 2x2 average), then apply the exact separable triangle
+    // filter PIL uses for the last step. Measured against exact PIL-style
+    // resizing on 58 real photos: same detections within noise, ~tens of ms.
+    var scratchCanvases = [];
+    var weightCache = {};
+    var bufFloatA = null, bufFloatB = null;
+    function scratch(i, w, h) {
+      var c = scratchCanvases[i];
+      if (!c) c = scratchCanvases[i] = document.createElement('canvas');
+      if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+      return c;
+    }
+    function axisWeights(srcLen, dstLen) {
+      var key = srcLen + '>' + dstLen;
+      if (weightCache[key]) return weightCache[key];
+      var scale = srcLen / dstLen, support = Math.max(1, scale), table = [];
+      for (var i = 0; i < dstLen; i++) {
+        var c = (i + 0.5) * scale;
+        var lo = Math.max(0, Math.floor(c - support + 0.5)), hi = Math.min(srcLen, Math.floor(c + support + 0.5));
+        var w = [], s = 0;
+        for (var k = lo; k < hi; k++) { var v = Math.max(0, 1 - Math.abs((k + 0.5 - c) / support)); w.push(v); s += v; }
+        for (var j = 0; j < w.length; j++) w[j] /= s;
+        table.push({ lo: lo, w: Float32Array.from(w) });
+      }
+      weightCache[key] = table;
+      return table;
+    }
+    function downscaleToInput(source, sw, sh) {
+      var src = source, step = 0;
+      while (sw / 2 >= 2 * INPUT_W && sh / 2 >= 2 * INPUT_H) {
+        var nw = Math.floor(sw / 2), nh = Math.floor(sh / 2);
+        var c = scratch(step++ % 2, nw, nh), cx = c.getContext('2d');
+        cx.imageSmoothingEnabled = true; cx.imageSmoothingQuality = 'high';
+        cx.drawImage(src, 0, 0, sw, sh, 0, 0, nw, nh);
+        src = c; sw = nw; sh = nh;
+      }
+      var rc = scratch(2, sw, sh), rx = rc.getContext('2d', { willReadFrequently: true });
+      rx.drawImage(src, 0, 0, sw, sh);
+      var px = rx.getImageData(0, 0, sw, sh).data;
+      var n = sw * sh * 3;
+      if (!bufFloatA || bufFloatA.length < n) bufFloatA = new Float32Array(n);
+      var hzLen = INPUT_W * sh * 3;
+      if (!bufFloatB || bufFloatB.length < hzLen) bufFloatB = new Float32Array(hzLen);
+      for (var i = 0, j = 0; i < sw * sh; i++, j += 3) { bufFloatA[j] = px[i * 4]; bufFloatA[j + 1] = px[i * 4 + 1]; bufFloatA[j + 2] = px[i * 4 + 2]; }
+      var wx = axisWeights(sw, INPUT_W), wy = axisWeights(sh, INPUT_H);
+      var y, x, k, o, p, r, g, b, t;
+      for (y = 0; y < sh; y++) {                       // horizontal pass
+        for (x = 0; x < INPUT_W; x++) {
+          t = wx[x]; r = g = b = 0;
+          for (k = 0; k < t.w.length; k++) { p = (y * sw + t.lo + k) * 3; r += t.w[k] * bufFloatA[p]; g += t.w[k] * bufFloatA[p + 1]; b += t.w[k] * bufFloatA[p + 2]; }
+          o = (y * INPUT_W + x) * 3; bufFloatB[o] = r; bufFloatB[o + 1] = g; bufFloatB[o + 2] = b;
+        }
+      }
+      var out = new Uint8ClampedArray(INPUT_W * INPUT_H * 4);
+      for (y = 0; y < INPUT_H; y++) {                  // vertical pass
+        t = wy[y];
+        for (x = 0; x < INPUT_W; x++) {
+          r = g = b = 0;
+          for (k = 0; k < t.w.length; k++) { p = ((t.lo + k) * INPUT_W + x) * 3; r += t.w[k] * bufFloatB[p]; g += t.w[k] * bufFloatB[p + 1]; b += t.w[k] * bufFloatB[p + 2]; }
+          o = (y * INPUT_W + x) * 4; out[o] = Math.round(r); out[o + 1] = Math.round(g); out[o + 2] = Math.round(b); out[o + 3] = 255;
+        }
+      }
+      return out;
+    }
+
+    // Direct (non-aspect-preserving) resize to 320x416 -- matches
+    // dataset.py's img.resize((320,416)) in geometry (stretched, not letterboxed)
+    // AND now in filtering (antialiased), see downscaleToInput above.
+    function preprocess(source, sourceW, sourceH) {
+      var imgData = downscaleToInput(source, sourceW, sourceH);
+      var chw = new Float32Array(3 * INPUT_W * INPUT_H);
+      var plane = INPUT_W * INPUT_H;
+      for (var y = 0; y < INPUT_H; y++) {
+        for (var x = 0; x < INPUT_W; x++) {
+          var pIdx = (y * INPUT_W + x) * 4;
+          var oIdx = y * INPUT_W + x;
+          chw[oIdx] = (imgData[pIdx] / 255 - MEAN[0]) / STD[0];
+          chw[plane + oIdx] = (imgData[pIdx + 1] / 255 - MEAN[1]) / STD[1];
+          chw[2 * plane + oIdx] = (imgData[pIdx + 2] / 255 - MEAN[2]) / STD[2];
+        }
+      }
+      return chw;
+    }
+
+    function sigmoid(v) { return 1 / (1 + Math.exp(-v)); }
+
+    // Exact port of decode_multi.py's heatmap_to_tips(): greedy global-max
+    // extraction with a suppression radius so one blob's own shoulder isn't
+    // double-counted, capped at MAX_DARTS. Deliberately a manual scan, NOT
+    // heatmapData.map()/.sort() -- heatmapData is a Float32Array, and
+    // TypedArray.prototype.map() silently coerces a returned {i,v} object to
+    // NaN instead of storing it, which breaks the confidence check outright
+    // (confirmed by direct testing: every decoded tip came back NaN/
+    // undefined even though the confidence gate should have rejected them).
+    function decodeHeatmap(raw) {
+      var n = HEATMAP_H * HEATMAP_W;
+      var sig = new Float32Array(n);
+      for (var i = 0; i < n; i++) sig[i] = sigmoid(raw[i]);
+      var tips = [];
+      for (var k = 0; k < MAX_DARTS; k++) {
+        var bestIdx = -1, bestVal = -Infinity;
+        for (var j = 0; j < n; j++) {
+          if (sig[j] > bestVal) { bestVal = sig[j]; bestIdx = j; }
+        }
+        if (bestVal < confidenceThreshold) break;
+        var by = Math.floor(bestIdx / HEATMAP_W), bx = bestIdx % HEATMAP_W;
+        tips.push({ x: bx, y: by, confidence: bestVal });
+        var y0 = Math.max(0, by - NMS_RADIUS), y1 = Math.min(HEATMAP_H, by + NMS_RADIUS + 1);
+        var x0 = Math.max(0, bx - NMS_RADIUS), x1 = Math.min(HEATMAP_W, bx + NMS_RADIUS + 1);
+        for (var yy = y0; yy < y1; yy++) {
+          for (var xx = x0; xx < x1; xx++) sig[yy * HEATMAP_W + xx] = -1;
+        }
+      }
+      return tips;
+    }
+
+    function predict(frame) {
+      if (!session) return Promise.reject(new Error('DartFeed model not loaded yet'));
+      var chw = preprocess(frame.canvas, frame.width, frame.height);
+      var tensor = new window.ort.Tensor('float32', chw, [1, 3, INPUT_H, INPUT_W]);
+      var runSession = session;
+      return runSession.run({ input: tensor }).then(function (results) {
+        // If the user switched models while this frame was in flight, drop the
+        // result rather than show the previous model's output as the new one's.
+        if (runSession !== session) return [];
+        var outKey = Object.keys(results)[0];
+        var out = results[outKey];
+        var tips = decodeHeatmap(out.data);
+        var scaleX = INPUT_W / frame.width, scaleY = INPUT_H / frame.height;
+        return tips.map(function (t) {
+          var xInput = t.x * OUTPUT_STRIDE, yInput = t.y * OUTPUT_STRIDE;
+          return {
+            x: xInput / scaleX, y: yInput / scaleY,
+            confidence: t.confidence, type: 'dart-tip'
+          };
+        });
+      });
+    }
+
+    function dispose() { session = null; }
+
+    return {
+      // Reflects the active model; the default (original) keeps the exact
+      // string it always had, so debug panel + export JSON read correctly.
+      get name() { return MODELS[activeKey].adapterName; },
+      load: load, isReady: isReady, predict: predict, dispose: dispose,
+      models: MODELS, getActiveModel: getActiveModel, setActiveModel: setActiveModel, getLoadNote: function () { return loadNote; },
+      inputWidth: INPUT_W, inputHeight: INPUT_H,
+      get confidenceThreshold() { return confidenceThreshold; },
+      setConfidenceThreshold: function (v) { confidenceThreshold = v; },
+      iouThreshold: null
+    };
+  })();
+
+  var activeAdapter = DartFeedTipModelAdapter;
+
+  // =========================================================================
+  // 2. BOARD GEOMETRY -- ported verbatim from the local test bench (which
+  // itself ports DartFeed's own production detector): find the double
+  // ring's red/green hue peaks adaptively -> mask + contour + ellipse-fit
+  // -> walk 720 points around its boundary looking for red<->green
+  // transitions (~20 on a real board).
+  // =========================================================================
+  var OpenCVLoader = (function () {
+    var loadingPromise = null;
+    var CDN_URLS = [
+      'https://cdn.jsdelivr.net/npm/@techstark/opencv-js/dist/opencv.js',
+      'https://docs.opencv.org/4.9.0/opencv.js'
+    ];
+    function waitForRuntime(resolve, reject) {
+      var checks = 0;
+      var poll = setInterval(function () {
+        checks++;
+        if (window.cv && typeof window.cv.Mat === 'function') { clearInterval(poll); resolve(); return; }
+        if (checks > 300) { clearInterval(poll); reject(new Error('OpenCV runtime did not finish initialising in time.')); }
+      }, 100);
+    }
+    function loadFrom(url) {
+      return new Promise(function (resolve, reject) {
+        var script = document.createElement('script');
+        script.src = url; script.async = true;
+        script.onload = function () {
+          if (window.cv && typeof window.cv.then === 'function') { window.cv.then(function (resolved) { window.cv = resolved; resolve(); }).catch(reject); return; }
+          if (window.cv && typeof window.cv.Mat === 'function') { resolve(); return; }
+          if (window.cv) { window.cv['onRuntimeInitialized'] = resolve; }
+          waitForRuntime(resolve, reject);
+        };
+        script.onerror = function () { reject(new Error('Could not load ' + url)); };
+        document.head.appendChild(script);
+      });
+    }
+    function load() {
+      if (loadingPromise) return loadingPromise;
+      loadingPromise = loadFrom(CDN_URLS[0]).catch(function () { return loadFrom(CDN_URLS[1]); });
+      return loadingPromise;
+    }
+    function isReady() { return !!(window.cv && typeof window.cv.Mat === 'function'); }
+    return { load: load, isReady: isReady };
+  })();
+
+  function findAdaptiveHuePeaks(hsvMat) {
+    var data = hsvMat.data, n = hsvMat.rows * hsvMat.cols;
+    var hueHist = new Array(180).fill(0);
+    for (var i = 0; i < n; i++) {
+      var h = data[i * 3], s = data[i * 3 + 1], v = data[i * 3 + 2];
+      if (s > 80 && v > 60) hueHist[h]++;
+    }
+    var greenPeak = 45, greenMax = -1;
+    for (var g = 45; g < 85; g++) { if (hueHist[g] > greenMax) { greenMax = hueHist[g]; greenPeak = g; } }
+    var lowRedPeak = 0, lowRedMax = -1;
+    for (var r1 = 0; r1 < 15; r1++) { if (hueHist[r1] > lowRedMax) { lowRedMax = hueHist[r1]; lowRedPeak = r1; } }
+    var highRedPeak = 165, highRedMax = -1;
+    for (var r2 = 165; r2 < 180; r2++) { if (hueHist[r2] > highRedMax) { highRedMax = hueHist[r2]; highRedPeak = r2; } }
+    var redPeak = lowRedMax > highRedMax ? lowRedPeak : highRedPeak;
+    return { red: redPeak, green: greenPeak };
+  }
+  function hueDist(h, peak) { return Math.min(Math.abs(h - peak), 180 - Math.abs(h - peak)); }
+
+  // Hue is circular (0-179, then wraps back to 0) but cv.inRange takes a
+  // single non-wrapping [lower, upper] window. Red's true hue sits right at
+  // that 0/179 seam, so a peak near either end needs its window split into
+  // two pieces and OR'd together -- otherwise real red pixels on the far
+  // side of the seam are silently dropped. Green's peak is always mid-range
+  // (45-85) so this never changes its mask.
+  function buildHueRangeMask(cv, hsvMat, peak, halfWidth) {
+    var lo = peak - halfWidth, hi = peak + halfWidth;
+    var mask = new cv.Mat();
+    function rangeMask(lo2, hi2) {
+      var lower = new cv.Mat(hsvMat.rows, hsvMat.cols, hsvMat.type(), [lo2, 60, 40, 0]);
+      var upper = new cv.Mat(hsvMat.rows, hsvMat.cols, hsvMat.type(), [hi2, 255, 255, 255]);
+      var m = new cv.Mat();
+      cv.inRange(hsvMat, lower, upper, m);
+      lower.delete(); upper.delete();
+      return m;
+    }
+    if (lo < 0) {
+      var maskA1 = rangeMask(0, Math.min(179, hi));
+      var maskA2 = rangeMask(Math.max(0, 180 + lo), 179);
+      cv.bitwise_or(maskA1, maskA2, mask);
+      maskA1.delete(); maskA2.delete();
+    } else if (hi > 179) {
+      var maskB1 = rangeMask(Math.max(0, lo), 179);
+      var maskB2 = rangeMask(0, Math.min(179, hi - 180));
+      cv.bitwise_or(maskB1, maskB2, mask);
+      maskB1.delete(); maskB2.delete();
+    } else {
+      var m = rangeMask(lo, hi);
+      m.copyTo(mask);
+      m.delete();
+    }
+    return mask;
+  }
+
+  function findRingEllipse(cv, hsvMat, peaks, frameW, frameH) {
+    var maskRed = buildHueRangeMask(cv, hsvMat, peaks.red, 14);
+    var maskGreen = buildHueRangeMask(cv, hsvMat, peaks.green, 14);
+    var maskCombined = new cv.Mat();
+    cv.bitwise_or(maskRed, maskGreen, maskCombined);
+
+    var kernel = cv.Mat.ones(8, 8, cv.CV_8U);
+    var closed = new cv.Mat();
+    cv.morphologyEx(maskCombined, closed, cv.MORPH_CLOSE, kernel);
+
+    var contours = new cv.MatVector();
+    var hierarchy = new cv.Mat();
+    cv.findContours(closed, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_NONE);
+
+    var minAreaThreshold = (frameW * frameH) * 0.02;
+    var candidates = [];
+    for (var i = 0; i < contours.size(); i++) {
+      var cnt = contours.get(i);
+      var area = cv.contourArea(cnt);
+      if (area > minAreaThreshold && cnt.rows >= 30) {
+        var rect = cv.fitEllipse(cnt);
+        var w = rect.size.width, h = rect.size.height;
+        if (isFinite(w) && isFinite(h) && w > 0 && h > 0) {
+          var a, b, angleRad;
+          if (w >= h) { a = w / 2; b = h / 2; angleRad = rect.angle * Math.PI / 180; }
+          else { a = h / 2; b = w / 2; angleRad = rect.angle * Math.PI / 180 + Math.PI / 2; }
+          candidates.push({ cx: rect.center.x, cy: rect.center.y, a: a, b: b, angleRad: angleRad, area: area, meanR: (a + b) / 2 });
+        }
+      }
+      cnt.delete();
+    }
+
+    var result = null;
+    if (candidates.length === 1) {
+      result = candidates[0];
+    } else if (candidates.length > 1) {
+      var xs = candidates.map(function (c) { return c.cx; }).sort(function (p, q) { return p - q; });
+      var ys = candidates.map(function (c) { return c.cy; }).sort(function (p, q) { return p - q; });
+      var medianCx = xs[Math.floor(xs.length / 2)], medianCy = ys[Math.floor(ys.length / 2)];
+      var maxR = candidates.reduce(function (m, c) { return Math.max(m, c.meanR); }, 0);
+      var CONCENTRIC_TOLERANCE = 0.35;
+      var concentricGroup = candidates.filter(function (c) { return Math.hypot(c.cx - medianCx, c.cy - medianCy) < maxR * CONCENTRIC_TOLERANCE; });
+      var pool = concentricGroup.length ? concentricGroup : candidates;
+      result = pool.reduce(function (a, b) { return b.meanR > a.meanR ? b : a; });
+    }
+
+    [maskRed, maskGreen, maskCombined, kernel, closed, hierarchy].forEach(function (m) { m.delete(); });
+    contours.delete();
+    return result;
+  }
+
+  // Sampled slightly inside the fitted ellipse's own edge (not at 1.0) to
+  // avoid the noisy anti-aliased/wire pixels right at the mask boundary.
+  // Shared by walkRingForPoints() (20-point path) and the 4-point landmark
+  // search below.
+  var RING_WALK_RFRAC = 0.97;
+
+  function buildRingWalkLabels(cv, hsvMat, ring, peaks, frameW, frameH) {
+    var n = 720, rFrac = RING_WALK_RFRAC;
+    var cos = Math.cos(ring.angleRad), sin = Math.sin(ring.angleRad);
+    var data = hsvMat.data;
+    var labels = [], coords = [];
+    for (var i = 0; i < n; i++) {
+      var theta = (i / n) * Math.PI * 2;
+      var lx = ring.a * rFrac * Math.cos(theta), ly = ring.b * rFrac * Math.sin(theta);
+      var px = ring.cx + lx * cos - ly * sin;
+      var py = ring.cy + lx * sin + ly * cos;
+      coords.push({ x: px, y: py });
+      var ipx = Math.round(px), ipy = Math.round(py);
+      if (ipx >= 0 && ipx < frameW && ipy >= 0 && ipy < frameH) {
+        var idx = ipy * frameW + ipx;
+        var h = data[idx * 3], s = data[idx * 3 + 1], v = data[idx * 3 + 2];
+        if (s > 60 && v > 40) {
+          if (hueDist(h, peaks.red) <= 14) labels.push('R');
+          else if (hueDist(h, peaks.green) <= 14) labels.push('G');
+          else labels.push(null);
+        } else labels.push(null);
+      } else labels.push(null);
+    }
+    var filled = [], last = null;
+    for (var j = 0; j < n; j++) { if (labels[j]) last = labels[j]; filled.push(last); }
+    // rawLabels (pre-fill) is carried alongside filled purely for the HUE
+    // DIAG diagnostic overlay below -- nothing in the calibration/scoring
+    // path reads it, so adding it here cannot change any existing behaviour.
+    return { n: n, coords: coords, filled: filled, rawLabels: labels };
+  }
+
+  function walkRingForPoints(cv, hsvMat, ring, peaks, frameW, frameH) {
+    var walk = buildRingWalkLabels(cv, hsvMat, ring, peaks, frameW, frameH);
+    var n = walk.n, coords = walk.coords, filled = walk.filled;
+    var coverage = filled.filter(function (l) { return l; }).length / n;
+    var transitionPoints = [];
+    for (var k = 0; k < n; k++) {
+      if (filled[(k - 1 + n) % n] && filled[k] && filled[(k - 1 + n) % n] !== filled[k]) transitionPoints.push(coords[k]);
+    }
+    return {
+      points: transitionPoints, coverage: coverage, ring: ring,
+      diag: { coords: coords, rawLabels: walk.rawLabels }
+    };
+  }
+
+  // =========================================================================
+  // 3. 4-POINT (AutoDarts-style) CALIBRATION -- ported verbatim. The four
+  // landmarks are the physical boundaries BETWEEN these segment pairs (not
+  // segment centres), spaced 90 degrees apart: 1/20, 6/10, 3/19, 11/14.
+  // Their board angles are read off SCORE_SEGMENT_ORDER (declared below),
+  // never hand-typed.
+  // =========================================================================
+  function boundaryAngleDegBefore(segmentNumber) {
+    var k = SCORE_SEGMENT_ORDER.indexOf(segmentNumber);
+    if (k === -1) throw new Error('Unknown segment number ' + segmentNumber);
+    return k * 18;
+  }
+  var _fourPointLandmarksCache = null;
+  function getFourPointLandmarks() {
+    if (!_fourPointLandmarksCache) {
+      _fourPointLandmarksCache = [
+        { name: '1/20', boardAngleDeg: boundaryAngleDegBefore(1) },
+        { name: '6/10', boardAngleDeg: boundaryAngleDegBefore(10) },
+        { name: '3/19', boardAngleDeg: boundaryAngleDegBefore(19) },
+        { name: '11/14', boardAngleDeg: boundaryAngleDegBefore(14) }
+      ];
+    }
+    return _fourPointLandmarksCache;
+  }
+  var FOUR_POINT_SEARCH_WINDOW_DEG = 12;
+  var FOUR_POINT_MAX_SAFE_GAP_DEG = 45;
+
+  function circularMeanRad(angles) {
+    var sx = 0, sy = 0;
+    angles.forEach(function (a) { sx += Math.cos(a); sy += Math.sin(a); });
+    return Math.atan2(sy, sx);
+  }
+
+  // Known landmark -> known board angle -> expected image location (via a
+  // reference orientation established the SAME way the 20-point path does,
+  // labelRingPoints()'s topmost-point heuristic) -> local search around
+  // that expected location -> strongest nearby colour transition. Fully
+  // dynamic: every input (ring.cx/cy/a/b/angleRad, the reference angle) is
+  // recomputed fresh from THIS image's own detected geometry -- no fixed
+  // pixel coordinates anywhere.
+  function detectFourPointLandmarks(cv, hsvMat, ring, peaks, frameW, frameH) {
+    var walk = buildRingWalkLabels(cv, hsvMat, ring, peaks, frameW, frameH);
+    var n = walk.n, coords = walk.coords, filled = walk.filled;
+
+    var rawTransitions = [];
+    for (var k = 0; k < n; k++) {
+      if (filled[(k - 1 + n) % n] && filled[k] && filled[(k - 1 + n) % n] !== filled[k]) rawTransitions.push(coords[k]);
+    }
+    var mergedForLandmarks = mergeCloseRingPoints(rawTransitions, { x: ring.cx, y: ring.cy }, RING_SPACING_MIN_DEG);
+    var globalTransitions = mergedForLandmarks.points;
+    if (globalTransitions.length < 3) {
+      return {
+        referenceAngle: null,
+        landmarks: getFourPointLandmarks().map(function (lm) {
+          return { name: lm.name, boardAngleDeg: lm.boardAngleDeg, found: false, reason: 'Not enough ring structure detected anywhere to establish board orientation.' };
+        })
+      };
+    }
+    var sortedByAngle = globalTransitions.map(function (p) {
+      return { x: p.x, y: p.y, angle: Math.atan2(p.y - ring.cy, p.x - ring.cx) };
+    }).sort(function (a, b) { return a.angle - b.angle; });
+    var maxGapDeg = 0;
+    for (var g = 0; g < sortedByAngle.length; g++) {
+      var next = sortedByAngle[(g + 1) % sortedByAngle.length];
+      var gapDeg = ((next.angle - sortedByAngle[g].angle + Math.PI * 2 * 3) % (Math.PI * 2)) * 180 / Math.PI;
+      maxGapDeg = Math.max(maxGapDeg, gapDeg);
+    }
+    if (maxGapDeg > FOUR_POINT_MAX_SAFE_GAP_DEG) {
+      var gapReason = 'Board orientation unreliable -- a ' + maxGapDeg.toFixed(1) + ' degree gap in the detected ring (several boundaries missing at once) is too large to safely reconstruct which segments were skipped.';
+      return {
+        referenceAngle: null,
+        landmarks: getFourPointLandmarks().map(function (lm) {
+          return { name: lm.name, boardAngleDeg: lm.boardAngleDeg, found: false, reason: gapReason };
+        })
+      };
+    }
+    var labelled = labelRingPoints(globalTransitions, { x: ring.cx, y: ring.cy });
+    var refAngle = circularMeanRad(labelled.map(function (p) { return p.angle - p.boardAngle; }));
+
+    var landmarks = getFourPointLandmarks().map(function (lm) {
+      var expectedAngle = refAngle + lm.boardAngleDeg * Math.PI / 180;
+      var bestIdx = -1, bestDiffDeg = Infinity;
+      for (var i = 0; i < n; i++) {
+        var prevI = (i - 1 + n) % n;
+        if (!filled[prevI] || !filled[i] || filled[prevI] === filled[i]) continue;
+        var imgAngle = Math.atan2(coords[i].y - ring.cy, coords[i].x - ring.cx);
+        var diffRad = Math.atan2(Math.sin(imgAngle - expectedAngle), Math.cos(imgAngle - expectedAngle));
+        var diffDeg = Math.abs(diffRad * 180 / Math.PI);
+        if (diffDeg < bestDiffDeg) { bestDiffDeg = diffDeg; bestIdx = i; }
+      }
+      if (bestIdx === -1) {
+        return { name: lm.name, boardAngleDeg: lm.boardAngleDeg, found: false, reason: 'No colour transition detected anywhere near the expected position.' };
+      }
+      if (bestDiffDeg > FOUR_POINT_SEARCH_WINDOW_DEG) {
+        return { name: lm.name, boardAngleDeg: lm.boardAngleDeg, found: false, diffDeg: bestDiffDeg, reason: 'Nearest transition found was ' + bestDiffDeg.toFixed(1) + ' degrees from the expected position (search window is +/-' + FOUR_POINT_SEARCH_WINDOW_DEG + ').' };
+      }
+      return { name: lm.name, boardAngleDeg: lm.boardAngleDeg, found: true, diffDeg: bestDiffDeg, x: coords[bestIdx].x, y: coords[bestIdx].y };
+    });
+
+    for (var a = 0; a < landmarks.length; a++) {
+      for (var b = a + 1; b < landmarks.length; b++) {
+        if (!landmarks[a].found || !landmarks[b].found) continue;
+        if (Math.hypot(landmarks[a].x - landmarks[b].x, landmarks[a].y - landmarks[b].y) < 8) {
+          landmarks[a] = { name: landmarks[a].name, boardAngleDeg: landmarks[a].boardAngleDeg, found: false, reason: 'Resolved to the same physical point as ' + landmarks[b].name + '.' };
+          landmarks[b] = { name: landmarks[b].name, boardAngleDeg: landmarks[b].boardAngleDeg, found: false, reason: 'Resolved to the same physical point as ' + landmarks[a].name + '.' };
+        }
+      }
+    }
+
+    return { referenceAngle: refAngle, landmarks: landmarks };
+  }
+
+  function detectBoardGeometry(canvas, detW, detH, videoW, videoH) {
+    if (!OpenCVLoader.isReady()) return { confidence: 0, reason: 'OpenCV still loading' };
+    var cv = window.cv;
+    var tracked = [];
+    function track(m) { tracked.push(m); return m; }
+    try {
+      var ctx = canvas.getContext('2d', { willReadFrequently: true });
+      var imageData = ctx.getImageData(0, 0, detW, detH);
+      var src = track(cv.matFromImageData(imageData));
+      var rgb = track(new cv.Mat());
+      cv.cvtColor(src, rgb, cv.COLOR_RGBA2RGB);
+      var hsv = track(new cv.Mat());
+      cv.cvtColor(rgb, hsv, cv.COLOR_RGB2HSV);
+
+      var peaks = findAdaptiveHuePeaks(hsv);
+      var ring = findRingEllipse(cv, hsv, peaks, detW, detH);
+      if (!ring) return { confidence: 0, reason: 'No ring-coloured shape found' };
+
+      var walk = walkRingForPoints(cv, hsv, ring, peaks, detW, detH);
+      var pts20 = walk.points;
+      var countScore = pts20.length === 20 ? 1 : Math.max(0, 1 - Math.abs(pts20.length - 20) / 4);
+      var coverageScore = Math.max(0, Math.min(1, (walk.coverage - 0.5) / 0.4));
+      var spacingScore = 0;
+      if (pts20.length >= 3) {
+        var angles = pts20.map(function (p) { return Math.atan2(p.y - ring.cy, p.x - ring.cx); }).sort(function (a, b) { return a - b; });
+        var gaps = angles.map(function (a, i) { var next = angles[(i + 1) % angles.length]; var d = next - a; if (d < 0) d += Math.PI * 2; return d; });
+        var meanGap = gaps.reduce(function (s, g) { return s + g; }, 0) / gaps.length;
+        var gapVariance = gaps.reduce(function (s, g) { return s + Math.pow(g - meanGap, 2); }, 0) / gaps.length;
+        spacingScore = Math.max(0, 1 - Math.sqrt(gapVariance) / (meanGap * 0.6));
+      }
+      var confidence = Math.max(0, Math.min(1, 0.40 * countScore + 0.30 * spacingScore + 0.30 * coverageScore));
+
+      var fourPoint = detectFourPointLandmarks(cv, hsv, ring, peaks, detW, detH);
+
+      var scaleX = videoW / detW, scaleY = videoH / detH;
+      return {
+        confidence: confidence,
+        pointCount: pts20.length,
+        center: { x: ring.cx * scaleX, y: ring.cy * scaleY },
+        radiusX: ring.a * scaleX, radiusY: ring.b * scaleY,
+        rotationRadians: ring.angleRad,
+        ringPoints: pts20.map(function (p) { return { x: p.x * scaleX, y: p.y * scaleY }; }),
+        // Diagnostic-only fields for the HUE DIAG overlay/debug rows below --
+        // read by nothing in the calibration/scoring path, so they can never
+        // change a score or a calibration result.
+        huePeaks: { red: peaks.red, green: peaks.green },
+        ringHueCoverage: walk.coverage,
+        hueDiagPoints: walk.diag.coords.map(function (p, i) {
+          return { x: p.x * scaleX, y: p.y * scaleY, label: walk.diag.rawLabels[i] };
+        }),
+        fourPointLandmarks: {
+          referenceAngle: fourPoint.referenceAngle,
+          landmarks: fourPoint.landmarks.map(function (l) {
+            return l.found ? {
+              name: l.name, boardAngleDeg: l.boardAngleDeg, found: true, diffDeg: l.diffDeg,
+              x: l.x * scaleX, y: l.y * scaleY
+            } : { name: l.name, boardAngleDeg: l.boardAngleDeg, found: false, diffDeg: l.diffDeg, reason: l.reason };
+          })
+        }
+      };
+    } catch (e) {
+      return { confidence: 0, reason: 'Vision pipeline error: ' + e.message };
+    } finally {
+      tracked.forEach(function (m) { try { m.delete(); } catch (e2) {} });
+    }
+  }
+
+  // =========================================================================
+  // 4. SCORING -- ported verbatim from the local test bench / DartFeed's
+  // own production calibration system. Unmodified: board coordinate
+  // system, homography maths, segment order, ring thresholds.
+  // =========================================================================
+  var SCORE_SEGMENT_ORDER = [20, 1, 18, 4, 13, 6, 10, 15, 2, 17, 3, 19, 7, 16, 8, 11, 14, 9, 12, 5];
+  // Regulation WDF dimensions are 99/107mm (treble) and 162/170mm (double)
+  // on a 170mm scoring radius -- 8mm bands, razor-thin at camera-calibration
+  // scale. Only the INNER edge of each ring is widened (by 3mm -- symmetric
+  // widening on both edges was tried first and proved too generous), since
+  // the only real evidence so far is a genuine treble landing just short of
+  // the inner boundary (radius 0.576 vs the regulation 0.582 trebleInner,
+  // ~1mm short) -- a dart being scored single instead of treble/double
+  // because it's a hair inside the true ring. The outer edges stay at exact
+  // regulation distance since there's no evidence of a problem there. Bull
+  // is untouched too.
+  var SCORE_RING_RATIO = { innerBull: 6.35 / 170, outerBull: 15.9 / 170, trebleInner: 96 / 170, trebleOuter: 107 / 170, doubleInner: 159 / 170, doubleOuter: 170 / 170 };
+
+  function labelRingPoints(points, center) {
+    var withAngle = points.map(function (p) {
+      return { x: p.x, y: p.y, angle: Math.atan2(p.y - center.y, p.x - center.x) };
+    }).sort(function (a, b) { return a.angle - b.angle; });
+    var n = withAngle.length;
+    var topmostIdx = 0;
+    for (var k = 1; k < n; k++) if (withAngle[k].y < withAngle[topmostIdx].y) topmostIdx = k;
+    var prevIdx = (topmostIdx - 1 + n) % n, nextIdx = (topmostIdx + 1) % n;
+    var twentyWedgeStartIdx = (withAngle[prevIdx].y < withAngle[nextIdx].y) ? prevIdx : topmostIdx;
+
+    var offset = 0;
+    withAngle[twentyWedgeStartIdx].offset = 0;
+    var idx = twentyWedgeStartIdx;
+    for (var step = 1; step < n; step++) {
+      var nextI = (idx + 1) % n;
+      var gapDeg = ((withAngle[nextI].angle - withAngle[idx].angle) * 180 / Math.PI + 3600) % 360;
+      var increment = gapDeg <= RING_SPACING_MAX_DEG ? 1 : Math.round(gapDeg / 18);
+      offset += Math.max(1, increment);
+      withAngle[nextI].offset = offset;
+      idx = nextI;
+    }
+    for (var j = 0; j < n; j++) {
+      var off = withAngle[j].offset % 20;
+      withAngle[j].segmentClockwise = SCORE_SEGMENT_ORDER[off];
+      withAngle[j].segmentAnticlockwise = SCORE_SEGMENT_ORDER[(off - 1 + 20) % 20];
+      withAngle[j].boardAngle = (off * 18) * Math.PI / 180;
+    }
+    return withAngle;
+  }
+
+  function chooseFourCorners(labelledPoints) {
+    var targets = [45, 135, 225, 315].map(function (d) { return d * Math.PI / 180; });
+    var chosen = targets.map(function (target) {
+      var best = null, bestDiff = Infinity;
+      labelledPoints.forEach(function (p) {
+        var diff = Math.abs(p.boardAngle - target);
+        diff = Math.min(diff, Math.PI * 2 - diff);
+        if (diff < bestDiff) { bestDiff = diff; best = p; }
+      });
+      return best;
+    });
+    if (chosen.some(function (c) { return !c; })) return null;
+    var top = chosen.slice().sort(function (a, b) { return a.y - b.y; });
+    var bottom = chosen.slice().sort(function (a, b) { return b.y - a.y; });
+    var ordered = [top[0], bottom[0], bottom[1], top[1]];
+    if (ordered[0].x > ordered[3].x) { var t = ordered[0]; ordered[0] = ordered[3]; ordered[3] = t; }
+    if (ordered[1].x > ordered[2].x) { var t2 = ordered[1]; ordered[1] = ordered[2]; ordered[2] = t2; }
+    return ordered;
+  }
+
+  function solveLinearSystem(A, b) {
+    var n = b.length;
+    var M = A.map(function (row, i) { return row.concat([b[i]]); });
+    for (var col = 0; col < n; col++) {
+      var maxRow = col, maxVal = Math.abs(M[col][col]);
+      for (var r = col + 1; r < n; r++) { if (Math.abs(M[r][col]) > maxVal) { maxVal = Math.abs(M[r][col]); maxRow = r; } }
+      if (maxVal < 1e-9) return null;
+      if (maxRow !== col) { var tmp = M[col]; M[col] = M[maxRow]; M[maxRow] = tmp; }
+      var pivot = M[col][col];
+      for (var c = col; c <= n; c++) M[col][c] /= pivot;
+      for (var r2 = 0; r2 < n; r2++) {
+        if (r2 === col) continue;
+        var factor = M[r2][col];
+        if (factor === 0) continue;
+        for (var c2 = col; c2 <= n; c2++) M[r2][c2] -= factor * M[col][c2];
+      }
+    }
+    var x = [];
+    for (var i2 = 0; i2 < n; i2++) x.push(M[i2][n]);
+    return x;
+  }
+
+  function computeHomographyLeastSquares(src, dst) {
+    var n = src.length;
+    if (n < 4) return null;
+    var AtA = [[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],
+               [0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0]];
+    var Atb = [0, 0, 0, 0, 0, 0, 0, 0];
+    function accumulate(row, target) {
+      for (var a = 0; a < 8; a++) {
+        Atb[a] += row[a] * target;
+        for (var b2 = 0; b2 < 8; b2++) AtA[a][b2] += row[a] * row[b2];
+      }
+    }
+    for (var i = 0; i < n; i++) {
+      var x = src[i].x, y = src[i].y, X = dst[i].x, Y = dst[i].y;
+      accumulate([x, y, 1, 0, 0, 0, -X * x, -X * y], X);
+      accumulate([0, 0, 0, x, y, 1, -Y * x, -Y * y], Y);
+    }
+    var h = solveLinearSystem(AtA, Atb);
+    if (!h) return null;
+    return [h[0], h[1], h[2], h[3], h[4], h[5], h[6], h[7], 1];
+  }
+
+  function transformPointDLT(H, x, y) {
+    var w = H[6] * x + H[7] * y + H[8];
+    if (Math.abs(w) < 1e-12) return null;
+    return { x: (H[0] * x + H[1] * y + H[2]) / w, y: (H[3] * x + H[4] * y + H[5]) / w };
+  }
+
+  // idx MUST be floor(), not round() -- see labelRingPoints()'s header
+  // comment: SCORE_SEGMENT_ORDER[k] spans [k*18, (k+1)*18), centre at
+  // k*18+9, not k*18.
+  function scoreFromBoardPos(x, y) {
+    var radius = Math.hypot(x, y);
+    var angleDeg = (Math.atan2(x, -y) * 180 / Math.PI + 360) % 360;
+    var idx = Math.floor(angleDeg / 18) % 20;
+    var segment = SCORE_SEGMENT_ORDER[idx];
+    if (radius <= SCORE_RING_RATIO.innerBull) return { label: 'BULL', value: 50 };
+    if (radius <= SCORE_RING_RATIO.outerBull) return { label: '25', value: 25 };
+    if (radius <= SCORE_RING_RATIO.trebleInner) return { label: 'S' + segment, value: segment };
+    if (radius <= SCORE_RING_RATIO.trebleOuter) return { label: 'T' + segment, value: segment * 3 };
+    if (radius <= SCORE_RING_RATIO.doubleInner) return { label: 'S' + segment, value: segment };
+    if (radius <= SCORE_RING_RATIO.doubleOuter) return { label: 'D' + segment, value: segment * 2 };
+    return { label: 'MISS', value: 0 };
+  }
+
+  var CALIBRATION_MIN_CONFIDENCE = 0.80;
+  var RING_SPACING_MIN_DEG = 9;
+  var RING_SPACING_MAX_DEG = 27;
+
+  function checkRingPointSpacing(points, center, maxGapDeg) {
+    if (maxGapDeg === undefined) maxGapDeg = RING_SPACING_MAX_DEG;
+    var angles = points.map(function (p) {
+      return Math.atan2(p.y - center.y, p.x - center.x);
+    }).sort(function (a, b) { return a - b; });
+    var n = angles.length;
+    for (var i = 0; i < n; i++) {
+      var gapRad = (angles[(i + 1) % n] - angles[i] + Math.PI * 2) % (Math.PI * 2);
+      var gapDeg = gapRad * 180 / Math.PI;
+      if (gapDeg < RING_SPACING_MIN_DEG || gapDeg > maxGapDeg) {
+        return { ok: false, gapDeg: gapDeg };
+      }
+    }
+    return { ok: true };
+  }
+
+  function mergeCloseRingPoints(points, center, maxGapDeg) {
+    function gapDeg(p, q) {
+      var a = Math.atan2(p.y - center.y, p.x - center.x);
+      var b = Math.atan2(q.y - center.y, q.x - center.x);
+      return ((b - a + Math.PI * 2) % (Math.PI * 2)) * 180 / Math.PI;
+    }
+    var pts = points.slice().sort(function (p, q) {
+      return Math.atan2(p.y - center.y, p.x - center.x) - Math.atan2(q.y - center.y, q.x - center.x);
+    });
+    var mergedCount = 0;
+    var changed = true;
+    while (changed && pts.length > 3) {
+      changed = false;
+      var n = pts.length;
+      for (var i = 0; i < n; i++) {
+        var a = pts[i], b = pts[(i + 1) % n];
+        if (gapDeg(a, b) >= maxGapDeg) continue;
+        var prev = pts[(i - 1 + n) % n];
+        var next = pts[(i + 2) % n];
+        var excludeIdx = [(i - 1 + n) % n, i, (i + 1) % n];
+        var restGaps = [];
+        for (var k = 0; k < n; k++) {
+          if (excludeIdx.indexOf(k) === -1) restGaps.push(gapDeg(pts[k], pts[(k + 1) % n]));
+        }
+        restGaps.sort(function (x, y) { return x - y; });
+        var medianGap = restGaps.length ? restGaps[Math.floor(restGaps.length / 2)] : 18;
+        var gapIfDropA = gapDeg(prev, b);
+        var gapIfDropB = gapDeg(a, next);
+        var dropIdx = Math.abs(gapIfDropA - medianGap) <= Math.abs(gapIfDropB - medianGap) ? i : (i + 1) % n;
+        pts.splice(dropIdx, 1);
+        mergedCount++;
+        changed = true;
+        break;
+      }
+    }
+    return { points: pts, mergedCount: mergedCount };
+  }
+
+  // 20-point path: exactly 20 points required, confidence >= 0.80, spacing
+  // 9-27 degrees. Unweakened, unmodified.
+  function computeCalibrationFromRing(geo) {
+    if (!geo || !geo.ringPoints) {
+      return { homography: null, reason: 'Board ring not detected at all. Point the camera at a clearly visible board.' };
+    }
+    var merge = mergeCloseRingPoints(geo.ringPoints, geo.center, RING_SPACING_MIN_DEG);
+    var ringPoints = merge.points;
+    state.lastRingPointsMerged = merge.mergedCount;
+
+    var n = ringPoints.length;
+    if (n !== 20) {
+      return { homography: null, reason: 'Ring detection found ' + n + ' points, need exactly 20. Frame the whole board more clearly and try again.' };
+    }
+    if (!(geo.confidence >= CALIBRATION_MIN_CONFIDENCE)) {
+      return { homography: null, reason: 'Board detection confidence too low (' + geo.confidence.toFixed(2) + ', need >= ' + CALIBRATION_MIN_CONFIDENCE.toFixed(2) + '). Improve lighting/framing and try again.' };
+    }
+    var maxGapDeg = 18 * (21 - n) + 9;
+    var spacing = checkRingPointSpacing(ringPoints, geo.center, maxGapDeg);
+    if (!spacing.ok) {
+      return { homography: null, reason: 'Ring points unevenly spaced (found a ' + spacing.gapDeg.toFixed(1) + ' degree gap between adjacent points, expected close to 18). Board ring detection is likely picking up noise -- try recalibrating with clearer lighting/framing.' };
+    }
+
+    var labelled = labelRingPoints(ringPoints, geo.center);
+    var allTargets = labelled.map(function (p) { return { x: RING_WALK_RFRAC * Math.sin(p.boardAngle), y: -RING_WALK_RFRAC * Math.cos(p.boardAngle) }; });
+    var H = computeHomographyLeastSquares(labelled, allTargets);
+    if (!H) return { homography: null, reason: 'Calibration points are too close to collinear — geometry is degenerate.' };
+    var Hinv = computeHomographyLeastSquares(allTargets, labelled);
+    var corners = chooseFourCorners(labelled) || [];
+    return { homography: H, inverseHomography: Hinv, reason: null, corners: corners };
+  }
+
+  // 4-point path: shares only computeHomographyLeastSquares() and the
+  // RING_WALK_RFRAC convention with the 20-point path above -- a fix or
+  // regression in one can never silently leak into the other.
+  function computeCalibrationFromFourPoints(geo) {
+    if (!geo || !geo.fourPointLandmarks) {
+      return { homography: null, reason: 'Board ring not detected at all. Point the camera at a clearly visible board.', landmarks: null };
+    }
+    var landmarks = geo.fourPointLandmarks.landmarks;
+    var missing = landmarks.filter(function (l) { return !l.found; });
+    if (missing.length > 0) {
+      var reasonText = missing.map(function (l) { return l.name + ': FAIL (' + l.reason + ')'; }).join('  ');
+      return { homography: null, reason: '4-point calibration failed -- ' + reasonText, landmarks: landmarks };
+    }
+    var src = landmarks.map(function (l) { return { x: l.x, y: l.y }; });
+    var dst = landmarks.map(function (l) {
+      var rad = l.boardAngleDeg * Math.PI / 180;
+      return { x: RING_WALK_RFRAC * Math.sin(rad), y: -RING_WALK_RFRAC * Math.cos(rad) };
+    });
+    var H = computeHomographyLeastSquares(src, dst);
+    if (!H) return { homography: null, reason: 'Calibration points are too close to collinear — geometry is degenerate.', landmarks: landmarks };
+    var Hinv = computeHomographyLeastSquares(dst, src);
+    return { homography: H, inverseHomography: Hinv, reason: null, corners: landmarks, landmarks: landmarks };
+  }
+
+  function isDartCandidate(d) {
+    return d.type === 'dart-bbox-centre' || d.type === 'dart-tip';
+  }
+
+  function boardPositionOf(d) {
+    if (!state.homography) return null;
+    return transformPointDLT(state.homography, d.x, d.y);
+  }
+
+  function scoreDart(d) {
+    var bp = boardPositionOf(d);
+    if (!bp) return null;
+    return scoreFromBoardPos(bp.x, bp.y);
+  }
+
+  // =========================================================================
+  // 5. CAMERA (rear/environment only -- no photo-upload fallback, this
+  // page is specifically a live iPhone camera test)
+  // =========================================================================
+  var video = $('video');
+  var photoImg = $('photo-display');
+  var photoInput = $('photo-input');
+  var overlay = $('overlay');
+  var overlayCtx = overlay.getContext('2d');
+  var stream = null, videoTrack = null;
+  var detCanvas = document.createElement('canvas');
+
+  // ---- source abstraction (live camera vs. a loaded still photo) ----
+  // A loaded photo needs no camera permission and works even where
+  // getUserMedia() is unavailable -- it still exercises the exact same
+  // board-geometry/calibration/DartFeed pipeline, just against a still
+  // image instead of continuous video.
+  function activeSourceEl() { return state.mode === 'photo' ? photoImg : video; }
+  function activeSourceDims() {
+    if (state.mode === 'photo') return { w: photoImg.naturalWidth, h: photoImg.naturalHeight };
+    return { w: video.videoWidth, h: video.videoHeight };
+  }
+
+  function startCamera() {
+    var constraints = {
+      video: {
+        facingMode: { ideal: 'environment' },
+        width: { ideal: 4096 },
+        height: { ideal: 2160 }
+      },
+      audio: false
+    };
+    return navigator.mediaDevices.getUserMedia(constraints).then(function (s) {
+      stream = s;
+      videoTrack = s.getVideoTracks()[0];
+      video.srcObject = s;
+      return video.play();
+    }).then(function () {
+      enterCameraMode();
+      resizeOverlay();
+      setupZoom();
+      $('stat-camera').textContent = 'READY';
+      $('pill-camera').className = 'pill ok';
+      $('btn-calibrate').disabled = false;
+      $('btn-reset').disabled = false;
+    });
+  }
+
+  function resizeOverlay() {
+    var rect = activeSourceEl().getBoundingClientRect();
+    var dims = activeSourceDims();
+    overlay.width = dims.w || rect.width;
+    overlay.height = dims.h || rect.height;
+    overlay.style.width = rect.width + 'px';
+    overlay.style.height = rect.height + 'px';
+  }
+  window.addEventListener('resize', resizeOverlay);
+  window.addEventListener('orientationchange', function () { setTimeout(resizeOverlay, 200); });
+
+  function setupZoom() {
+    if (!videoTrack || !videoTrack.getCapabilities) { $('zoom-unsupported').classList.remove('hidden'); return; }
+    var caps = videoTrack.getCapabilities();
+    if (!caps.zoom) { $('zoom-unsupported').classList.remove('hidden'); return; }
+    var row = $('zoom-row');
+    row.classList.remove('hidden');
+    var slider = $('zoom-slider');
+    slider.min = caps.zoom.min; slider.max = caps.zoom.max; slider.step = caps.zoom.step || 0.1;
+    var settings = videoTrack.getSettings();
+    slider.value = settings.zoom || caps.zoom.min;
+    $('zoom-value').textContent = Number(slider.value).toFixed(1) + 'x';
+    slider.oninput = function () {
+      $('zoom-value').textContent = Number(slider.value).toFixed(1) + 'x';
+      videoTrack.applyConstraints({ advanced: [{ zoom: parseFloat(slider.value) }] }).catch(function () {});
+    };
+  }
+
+  // =========================================================================
+  // 6. STATE + PROCESSING LOOPS
+  // =========================================================================
+  var state = {
+    mode: 'camera', // 'camera' | 'photo' -- which source is currently active
+    boardStatus: 'SEARCHING', // SEARCHING | DETECTED | CALIBRATED
+    boardGeometry: null,
+    calibratedGeometry: null,
+    lastDetections: [],
+    debugOn: false,
+    hueDiagOn: false,
+    lastInferenceMs: 0,
+    lastBoardMs: 0,
+    processingFps: 0,
+    homography: null,
+    inverseHomography: null,
+    lastCalibrationCorners: [],
+    lastRingPointsMerged: 0,
+    showScoreNumbers: true,
+    calibrationMode: '20point', // '20point' | '4point'. Default preserves the proven method.
+    lastCalibrationResult: null,
+    cameraLocked: false, // true only after the camera is locked (LOCK CAMERA button, or the automatic lock below) -- gates dart-model inference
+    calibrationRequired: false // true after an explicit UNLOCK/RE-CALIBRATE, for the "REQUIRED" vs "NOT COMPLETE" wording only
+  };
+
+  // AUTOMATIC CALIBRATE + LOCK. Uses exactly the same calibration functions as
+  // the CALIBRATE button, run silently on every board-detection tick. The
+  // calibration is only committed (and the camera locked) after AUTO_FRAMES
+  // consecutive passing calibrations whose board position agrees to within
+  // AUTO_TOLERANCE of the image width -- so a moving phone, a hand in frame or a
+  // half-framed board can never lock early. A failing tick restarts the count.
+  var AUTO_FRAMES = 5;
+  var AUTO_TOLERANCE = 0.005;
+  var AUTO_REF_POINTS = [[0, 0], [0, -0.9], [0.9, 0], [0, 0.9], [-0.9, 0]]; // board-plane points (centre + 4 on the ring area)
+  var auto = { enabled: true, streak: 0, ref: null };
+
+  var boardBusy = false, modelBusy = false;
+  // Stops the recurring board/model ticks for the duration of an EXPORT --
+  // ONNX inference monopolising the JS thread every 250ms otherwise makes
+  // canvas/zip encoding measurably slow (confirmed in the local test bench
+  // this page was ported from: ~75x slower with the ticks left running).
+  var exportInProgress = false;
+  var DETECTION_WIDTH = 480;
+  var MAX_DARTS_DISPLAYED = 3; // a round is always <=3 darts
+  var OUT_OF_BOUNDS_RADIUS = 1.4;
+
+  function topDarts() {
+    var darts = state.lastDetections.filter(isDartCandidate);
+    if (state.homography) {
+      darts = darts.filter(function (d) {
+        var bp = boardPositionOf(d);
+        return !bp || Math.hypot(bp.x, bp.y) <= OUT_OF_BOUNDS_RADIUS;
+      });
+    }
+    return darts
+      .sort(function (a, b) { return b.confidence - a.confidence; })
+      .slice(0, MAX_DARTS_DISPLAYED);
+  }
+
+  // ---- COMPARE BOTH CALIBRATIONS (diagnostic only, never changes the
+  // active calibration) ----
+  function scoreDartsWithHomography(homography) {
+    if (!homography) return [];
+    var darts = state.lastDetections.filter(isDartCandidate)
+      .sort(function (a, b) { return b.confidence - a.confidence; })
+      .slice(0, MAX_DARTS_DISPLAYED);
+    return darts.map(function (d) {
+      var bp = transformPointDLT(homography, d.x, d.y);
+      if (!bp) return { x: d.x, y: d.y, label: 'MISS (no board position)' };
+      var s = scoreFromBoardPos(bp.x, bp.y);
+      return { x: d.x, y: d.y, boardX: bp.x, boardY: bp.y, label: s.label };
+    });
+  }
+
+  function homographyDifference(H1, H2) {
+    if (!H1 || !H2) return null;
+    var a = H1.map(function (v) { return v / H1[8]; });
+    var b = H2.map(function (v) { return v / H2[8]; });
+    var sumSq = 0;
+    for (var i = 0; i < 9; i++) sumSq += Math.pow(a[i] - b[i], 2);
+    return Math.sqrt(sumSq);
+  }
+
+  function runCompareBoth() {
+    var geo = activeBoardGeometry();
+    var panel = $('compare-panel');
+    if (!geo) {
+      panel.classList.remove('hidden');
+      panel.textContent = 'COMPARE BOTH CALIBRATIONS\n\nNo board detected at all -- point the camera at a clearly visible board first.';
+      return;
+    }
+    var r20 = computeCalibrationFromRing(geo);
+    var r4 = computeCalibrationFromFourPoints(geo);
+
+    var lines = [];
+    lines.push('COMPARE BOTH CALIBRATIONS (diagnostic only -- does not change the active calibration)');
+    lines.push('');
+    lines.push('20-POINT: ' + (r20.homography ? 'PASS' : 'FAIL -- ' + r20.reason));
+    lines.push('4-POINT:  ' + (r4.homography ? 'PASS' : 'FAIL -- ' + r4.reason));
+
+    if (r20.homography && r4.homography) {
+      var c20 = transformPointDLT(r20.inverseHomography, 0, 0);
+      var c4 = transformPointDLT(r4.inverseHomography, 0, 0);
+      var edge20 = transformPointDLT(r20.inverseHomography, 0, -RING_WALK_RFRAC);
+      var edge4 = transformPointDLT(r4.inverseHomography, 0, -RING_WALK_RFRAC);
+      var radius20 = c20 && edge20 ? Math.hypot(edge20.x - c20.x, edge20.y - c20.y) : null;
+      var radius4 = c4 && edge4 ? Math.hypot(edge4.x - c4.x, edge4.y - c4.y) : null;
+
+      lines.push('');
+      lines.push('Centre difference (image px): X: ' + (c4.x - c20.x).toFixed(1) + '   Y: ' + (c4.y - c20.y).toFixed(1));
+      if (radius20 && radius4) {
+        lines.push('Radius difference: ' + (((radius4 - radius20) / radius20) * 100).toFixed(2) + '%');
+      }
+      lines.push('Homography difference (Frobenius norm, normalised): ' + homographyDifference(r20.homography, r4.homography).toFixed(5));
+
+      var scores20 = scoreDartsWithHomography(r20.homography);
+      var scores4 = scoreDartsWithHomography(r4.homography);
+      if (scores20.length) {
+        lines.push('');
+        lines.push('Known dart score' + (scores20.length > 1 ? 's' : '') + ':');
+        for (var i = 0; i < scores20.length; i++) {
+          lines.push('  Dart ' + (i + 1) + '  20-POINT: ' + scores20[i].label + '   4-POINT: ' + (scores4[i] ? scores4[i].label : '—'));
+        }
+      }
+    }
+    panel.classList.remove('hidden');
+    panel.textContent = lines.join('\n');
+  }
+
+  function grabDetectionFrame() {
+    var dims = activeSourceDims();
+    if (!dims.w || !dims.h) return null;
+    var el = activeSourceEl();
+    var w = DETECTION_WIDTH, h = Math.round(dims.h * w / dims.w);
+    detCanvas.width = w; detCanvas.height = h;
+    var ctx = detCanvas.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(el, 0, 0, w, h);
+    return { canvas: detCanvas, width: w, height: h, videoWidth: dims.w, videoHeight: dims.h };
+  }
+
+  function boardTick() {
+    // Once the camera is locked, the calibrated geometry is frozen on
+    // purpose -- re-running board detection here would let a dart, hand, or
+    // lighting change silently re-fit the ellipse/homography underneath an
+    // already-locked calibration, which is exactly what LOCK CAMERA exists
+    // to prevent.
+    if (exportInProgress || boardBusy || state.cameraLocked || !activeSourceDims().w) return;
+    var frame = grabDetectionFrame();
+    if (!frame) return;
+    boardBusy = true;
+    var t0 = performance.now();
+    var result = detectBoardGeometry(frame.canvas, frame.width, frame.height, frame.videoWidth, frame.videoHeight);
+    state.lastBoardMs = performance.now() - t0;
+    state.boardGeometry = result;
+    if (state.boardStatus !== 'CALIBRATED') {
+      state.boardStatus = (result.confidence > 0) ? 'DETECTED' : 'SEARCHING';
+    } else if (result.confidence === 0) {
+      state.boardStatus = 'SEARCHING';
+      state.calibratedGeometry = null;
+    }
+    boardBusy = false;
+    autoCalibrateStep(frame);
+  }
+
+  function setAutoStatus(text) { $('auto-status').textContent = text; }
+
+  function autoReset() {
+    auto.streak = 0; auto.ref = null;
+    if (!auto.enabled) setAutoStatus('Auto calibrate + lock: off');
+    else if (!state.cameraLocked) setAutoStatus('Auto: searching for the board…');
+  }
+
+  // Image positions of a few fixed board-plane points under a calibration; two
+  // calibrations "agree" if every one of these moves less than the tolerance.
+  function calibrationSignature(inverseHomography) {
+    return AUTO_REF_POINTS.map(function (p) { return transformPointDLT(inverseHomography, p[0], p[1]); });
+  }
+
+  function autoCalibrateStep(frame) {
+    if (!auto.enabled) return;
+    if (state.cameraLocked) return;
+    var geo = state.boardGeometry;
+    if (!geo || !geo.ringPoints) { auto.streak = 0; auto.ref = null; setAutoStatus('Auto: searching for the board…'); return; }
+    var result = state.calibrationMode === '4point' ? computeCalibrationFromFourPoints(geo) : computeCalibrationFromRing(geo);
+    if (!result.homography || !result.inverseHomography) {
+      auto.streak = 0; auto.ref = null;
+      setAutoStatus('Auto: board seen, calibration not passing yet — ' + String(result.reason || '').slice(0, 110));
+      return;
+    }
+    var sig = calibrationSignature(result.inverseHomography);
+    var tol = AUTO_TOLERANCE * frame.videoWidth;
+    var stable = !!auto.ref && sig.every(function (p, i) {
+      var r = auto.ref[i];
+      return p && r && Math.hypot(p.x - r.x, p.y - r.y) <= tol;
+    });
+    if (stable) auto.streak++; else { auto.ref = sig; auto.streak = 1; }
+    if (auto.streak < AUTO_FRAMES) { setAutoStatus('Auto: calibration passing, holding steady ' + auto.streak + '/' + AUTO_FRAMES + '…'); return; }
+    // Stable long enough: commit exactly as the CALIBRATE button would, then lock.
+    state.lastCalibrationResult = result;
+    commitCalibration(result, geo);
+    lockCameraNow();
+    setAutoStatus('Auto: calibrated and LOCKED automatically — dart detection enabled');
+  }
+
+  function modelTick() {
+    // DartFeedTipModelAdapter.predict() must never be invoked before the
+    // workflow reaches CALIBRATION PASS + the camera being locked (LOCK CAMERA
+    // button, or the automatic lock after a stable calibration) --
+    // not just hidden from the UI, not called at all. This is the single
+    // gate that enforces that for the live camera/photo loop.
+    if (exportInProgress || !state.cameraLocked || state.boardStatus !== 'CALIBRATED') return;
+    var dims = activeSourceDims();
+    if (modelBusy || !activeAdapter.isReady() || !dims.w) return;
+    modelBusy = true;
+    var t0 = performance.now();
+    var frame = { canvas: activeSourceEl(), width: dims.w, height: dims.h };
+    activeAdapter.predict(frame).then(function (detections) {
+      modelBusy = false;
+      // A predict() call started before an UNLOCK can still resolve after
+      // it -- discard it rather than let stale results reappear post-unlock.
+      if (!state.cameraLocked) return;
+      state.lastInferenceMs = performance.now() - t0;
+      state.lastDetections = detections;
+    }).catch(function (err) {
+      modelBusy = false;
+      console.error('Model inference failed:', err);
+    });
+  }
+
+  var frameCount = 0, fpsWindowStart = performance.now();
+  function drawLoop() {
+    var dims = activeSourceDims();
+    if (dims.w) {
+      resizeOverlayIfNeeded();
+      overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
+      drawBoardOverlay();
+      drawHueDiagnosticOverlay();
+      drawScoreOverlay();
+      drawFourPointLandmarksOverlay();
+      drawDartOverlay();
+      frameCount++;
+      var now = performance.now();
+      if (now - fpsWindowStart > 1000) {
+        state.processingFps = frameCount / ((now - fpsWindowStart) / 1000);
+        frameCount = 0; fpsWindowStart = now;
+      }
+    }
+    updateUi();
+    requestAnimationFrame(drawLoop);
+  }
+
+  function resizeOverlayIfNeeded() {
+    var dims = activeSourceDims();
+    if (overlay.width !== dims.w || overlay.height !== dims.h) resizeOverlay();
+  }
+
+  function activeBoardGeometry() {
+    return state.boardStatus === 'CALIBRATED' ? state.calibratedGeometry : state.boardGeometry;
+  }
+
+  // =========================================================================
+  // 7. OVERLAY -- ported verbatim. Everything once CALIBRATED comes from
+  // state.inverseHomography (the SAME homography used to score real darts)
+  // plus SCORE_RING_RATIO/SCORE_SEGMENT_ORDER -- never a decorative
+  // approximation.
+  // =========================================================================
+  function drawBoardOverlay() {
+    if (state.boardStatus === 'CALIBRATED') return;
+    var geo = activeBoardGeometry();
+    if (!geo || !geo.center) return;
+    overlayCtx.strokeStyle = '#7fd3ff';
+    overlayCtx.lineWidth = 3;
+    overlayCtx.beginPath();
+    overlayCtx.ellipse(geo.center.x, geo.center.y, geo.radiusX, geo.radiusY, geo.rotationRadians, 0, Math.PI * 2);
+    overlayCtx.stroke();
+    var cx = geo.center.x, cy = geo.center.y, s = 16;
+    overlayCtx.beginPath();
+    overlayCtx.moveTo(cx - s, cy); overlayCtx.lineTo(cx + s, cy);
+    overlayCtx.moveTo(cx, cy - s); overlayCtx.lineTo(cx, cy + s);
+    overlayCtx.stroke();
+  }
+
+  // Diagnostic-only: visualizes exactly what buildRingWalkLabels() sampled
+  // around the fitted ellipse -- one dot per sample point (720 total),
+  // colour-coded by what it matched, plus the resulting transition points
+  // (the ~20 candidate ring points calibration actually uses). Never reads
+  // from or writes to state.homography/calibratedGeometry -- purely a window
+  // into the already-computed geo.hueDiagPoints/geo.ringPoints.
+  function drawHueDiagnosticOverlay() {
+    if (!state.hueDiagOn) return;
+    var geo = activeBoardGeometry();
+    if (!geo || !geo.hueDiagPoints) return;
+    var dotR = Math.max(1.5, overlay.width * 0.0022);
+    geo.hueDiagPoints.forEach(function (p) {
+      overlayCtx.beginPath();
+      overlayCtx.arc(p.x, p.y, dotR, 0, Math.PI * 2);
+      if (p.label === 'R') overlayCtx.fillStyle = '#ff3b3b';
+      else if (p.label === 'G') overlayCtx.fillStyle = '#3bff6a';
+      else overlayCtx.fillStyle = 'rgba(255,255,255,0.18)';
+      overlayCtx.fill();
+    });
+    var ptR = Math.max(4, overlay.width * 0.006);
+    (geo.ringPoints || []).forEach(function (p) {
+      overlayCtx.beginPath();
+      overlayCtx.arc(p.x, p.y, ptR, 0, Math.PI * 2);
+      overlayCtx.fillStyle = '#ffcf3a';
+      overlayCtx.fill();
+      overlayCtx.strokeStyle = 'rgba(0,0,0,0.85)';
+      overlayCtx.lineWidth = 1.5;
+      overlayCtx.stroke();
+    });
+  }
+
+  var SCORE_VALUE_COLOR = '#ffcf3a';
+  var SCORE_BOUNDARY_WIRE_COLOR = '#f2f2f2';
+  var SCORE_BOUNDARY_HALO_COLOR = 'rgba(0, 0, 0, 0.65)';
+  var SCORE_CENTRE_COLOR = '#6ee787';
+  var RING_BOUNDARY_RADII = [
+    SCORE_RING_RATIO.innerBull, SCORE_RING_RATIO.outerBull,
+    SCORE_RING_RATIO.trebleInner, SCORE_RING_RATIO.trebleOuter,
+    SCORE_RING_RATIO.doubleInner, SCORE_RING_RATIO.doubleOuter
+  ];
+  var SCORE_VALUE_RADII = {
+    singleInner: (SCORE_RING_RATIO.outerBull + SCORE_RING_RATIO.trebleInner) / 2,
+    treble: (SCORE_RING_RATIO.trebleInner + SCORE_RING_RATIO.trebleOuter) / 2,
+    singleOuter: (SCORE_RING_RATIO.trebleOuter + SCORE_RING_RATIO.doubleInner) / 2,
+    double: (SCORE_RING_RATIO.doubleInner + SCORE_RING_RATIO.doubleOuter) / 2
+  };
+  var OUTER_BULL_LABEL_RADIUS = (SCORE_RING_RATIO.innerBull + SCORE_RING_RATIO.outerBull) / 2;
+
+  function boardToImage(boardX, boardY) {
+    return transformPointDLT(state.inverseHomography, boardX, boardY);
+  }
+
+  function strokeAsWire(buildPath, haloWidth, wireWidth) {
+    overlayCtx.strokeStyle = SCORE_BOUNDARY_HALO_COLOR;
+    overlayCtx.lineWidth = haloWidth;
+    overlayCtx.beginPath();
+    buildPath();
+    overlayCtx.stroke();
+    overlayCtx.strokeStyle = SCORE_BOUNDARY_WIRE_COLOR;
+    overlayCtx.lineWidth = wireWidth;
+    overlayCtx.beginPath();
+    buildPath();
+    overlayCtx.stroke();
+  }
+
+  function drawScoreOverlay() {
+    if (state.boardStatus !== 'CALIBRATED' || !state.inverseHomography) return;
+    var STEPS = 72;
+    var haloWidth = Math.max(3, overlay.width * 0.0035);
+    var wireWidth = Math.max(1.2, overlay.width * 0.0013);
+
+    RING_BOUNDARY_RADII.forEach(function (r) {
+      strokeAsWire(function () {
+        for (var i = 0; i <= STEPS; i++) {
+          var theta = (i / STEPS) * Math.PI * 2;
+          var pt = boardToImage(r * Math.sin(theta), -r * Math.cos(theta));
+          if (!pt) continue;
+          if (i === 0) overlayCtx.moveTo(pt.x, pt.y); else overlayCtx.lineTo(pt.x, pt.y);
+        }
+      }, haloWidth, wireWidth);
+    });
+
+    for (var k = 0; k < 20; k++) {
+      var boundaryAngle = (k * 18) * Math.PI / 180;
+      var sinB = Math.sin(boundaryAngle), cosB = Math.cos(boundaryAngle);
+      var inner = boardToImage(SCORE_RING_RATIO.innerBull * sinB, -SCORE_RING_RATIO.innerBull * cosB);
+      var outer = boardToImage(SCORE_RING_RATIO.doubleOuter * sinB, -SCORE_RING_RATIO.doubleOuter * cosB);
+      if (!inner || !outer) continue;
+      strokeAsWire(function () {
+        overlayCtx.moveTo(inner.x, inner.y);
+        overlayCtx.lineTo(outer.x, outer.y);
+      }, haloWidth, wireWidth);
+    }
+
+    var centre = boardToImage(0, 0);
+    if (centre) {
+      var s = 16;
+      overlayCtx.strokeStyle = SCORE_CENTRE_COLOR;
+      overlayCtx.lineWidth = 3;
+      overlayCtx.beginPath();
+      overlayCtx.moveTo(centre.x - s, centre.y); overlayCtx.lineTo(centre.x + s, centre.y);
+      overlayCtx.moveTo(centre.x, centre.y - s); overlayCtx.lineTo(centre.x, centre.y + s);
+      overlayCtx.stroke();
+    }
+
+    if (!state.showScoreNumbers) return;
+
+    var fontSize = Math.max(12, Math.round(overlay.width * 0.018));
+    overlayCtx.font = 'bold ' + fontSize + 'px -apple-system, sans-serif';
+    overlayCtx.textAlign = 'center';
+    overlayCtx.textBaseline = 'middle';
+    overlayCtx.lineWidth = Math.max(2, fontSize * 0.2);
+
+    function drawValue(boardX, boardY, value, screenYOffset) {
+      var pt = boardToImage(boardX, boardY);
+      if (!pt) return;
+      var y = pt.y + (screenYOffset || 0);
+      var label = String(value);
+      overlayCtx.strokeStyle = 'rgba(0,0,0,0.85)';
+      overlayCtx.strokeText(label, pt.x, y);
+      overlayCtx.fillStyle = SCORE_VALUE_COLOR;
+      overlayCtx.fillText(label, pt.x, y);
+    }
+
+    for (var m = 0; m < 20; m++) {
+      var angle = (m * 18 + 9) * Math.PI / 180;
+      var sin = Math.sin(angle), cos = Math.cos(angle);
+      var segment = SCORE_SEGMENT_ORDER[m];
+      drawValue(SCORE_VALUE_RADII.singleInner * sin, -SCORE_VALUE_RADII.singleInner * cos, segment);
+      drawValue(SCORE_VALUE_RADII.treble * sin, -SCORE_VALUE_RADII.treble * cos, segment * 3);
+      drawValue(SCORE_VALUE_RADII.singleOuter * sin, -SCORE_VALUE_RADII.singleOuter * cos, segment);
+      drawValue(SCORE_VALUE_RADII.double * sin, -SCORE_VALUE_RADII.double * cos, segment * 2);
+    }
+    drawValue(0, 0, 50);
+    drawValue(0, -OUTER_BULL_LABEL_RADIUS, 25, -fontSize * 0.9);
+
+    overlayCtx.textAlign = 'left';
+    overlayCtx.textBaseline = 'alphabetic';
+  }
+
+  var FOUR_POINT_MARKER_COLOR = '#ff6ad5';
+  function drawFourPointLandmarksOverlay() {
+    if (state.calibrationMode !== '4point') return;
+    var geo = activeBoardGeometry();
+    if (!geo || !geo.fourPointLandmarks) return;
+    var fontSize = Math.max(13, Math.round(overlay.width * 0.02));
+    var r = Math.max(6, overlay.width * 0.008);
+    overlayCtx.font = 'bold ' + fontSize + 'px -apple-system, sans-serif';
+    overlayCtx.textAlign = 'left';
+    overlayCtx.textBaseline = 'middle';
+    geo.fourPointLandmarks.landmarks.forEach(function (l) {
+      if (!l.found) return;
+      overlayCtx.fillStyle = FOUR_POINT_MARKER_COLOR;
+      overlayCtx.beginPath();
+      overlayCtx.arc(l.x, l.y, r, 0, Math.PI * 2);
+      overlayCtx.fill();
+      overlayCtx.strokeStyle = 'rgba(0,0,0,0.85)';
+      overlayCtx.lineWidth = Math.max(3, fontSize * 0.2);
+      overlayCtx.strokeText(l.name, l.x + r * 1.6, l.y);
+      overlayCtx.fillStyle = FOUR_POINT_MARKER_COLOR;
+      overlayCtx.fillText(l.name, l.x + r * 1.6, l.y);
+    });
+    overlayCtx.textAlign = 'left';
+    overlayCtx.textBaseline = 'alphabetic';
+  }
+
+  var DART_TIP_MARKER_COLOR = '#37e6b3';
+  function drawDartOverlay() {
+    var darts = topDarts();
+    var markerRadius = Math.max(10, overlay.width * 0.02);
+    var lineWidth = Math.max(2, overlay.width * 0.003);
+    var fontSize = Math.max(20, Math.round(overlay.width * 0.045));
+    var captionSize = Math.max(12, Math.round(overlay.width * 0.018));
+    overlayCtx.lineJoin = 'round';
+
+    darts.forEach(function (d) {
+      var score = scoreDart(d);
+      overlayCtx.strokeStyle = DART_TIP_MARKER_COLOR;
+      overlayCtx.fillStyle = DART_TIP_MARKER_COLOR;
+      overlayCtx.lineWidth = lineWidth;
+
+      overlayCtx.beginPath();
+      overlayCtx.arc(d.x, d.y, markerRadius, 0, Math.PI * 2);
+      overlayCtx.stroke();
+      overlayCtx.beginPath();
+      overlayCtx.moveTo(d.x - markerRadius * 1.3, d.y); overlayCtx.lineTo(d.x + markerRadius * 1.3, d.y);
+      overlayCtx.moveTo(d.x, d.y - markerRadius * 1.3); overlayCtx.lineTo(d.x, d.y + markerRadius * 1.3);
+      overlayCtx.stroke();
+
+      var label = score ? score.label : '—';
+      var labelX = d.x + markerRadius * 1.7, labelY = d.y + fontSize * 0.3;
+      overlayCtx.font = 'bold ' + fontSize + 'px -apple-system, sans-serif';
+      overlayCtx.lineWidth = Math.max(3, fontSize * 0.22);
+      overlayCtx.strokeStyle = 'rgba(0,0,0,0.85)';
+      overlayCtx.strokeText(label, labelX, labelY);
+      overlayCtx.fillStyle = DART_TIP_MARKER_COLOR;
+      overlayCtx.fillText(label, labelX, labelY);
+
+      overlayCtx.font = captionSize + 'px -apple-system, sans-serif';
+      overlayCtx.lineWidth = Math.max(2, captionSize * 0.25);
+      overlayCtx.strokeStyle = 'rgba(0,0,0,0.85)';
+      overlayCtx.strokeText('DartFeed tip', labelX, labelY + fontSize * 0.75);
+      overlayCtx.fillStyle = DART_TIP_MARKER_COLOR;
+      overlayCtx.fillText('DartFeed tip', labelX, labelY + fontSize * 0.75);
+    });
+  }
+
+  // =========================================================================
+  // 8. UI
+  // =========================================================================
+  function updateUi() {
+    var boardEl = $('stat-board'), boardPill = $('pill-board');
+    boardEl.textContent = state.boardStatus;
+    boardPill.className = 'pill ' + (state.boardStatus === 'CALIBRATED' ? 'ok' : state.boardStatus === 'DETECTED' ? 'warn' : '');
+
+    var calibrationLabel = state.cameraLocked ? 'LOCKED'
+      : state.boardStatus === 'CALIBRATED' ? 'PASS'
+      : state.calibrationRequired ? 'REQUIRED' : 'NOT COMPLETE';
+    $('stat-calibration').textContent = calibrationLabel;
+    $('pill-calibration').className = 'pill ' + (calibrationLabel === 'PASS' || calibrationLabel === 'LOCKED' ? 'ok' : calibrationLabel === 'REQUIRED' ? 'warn' : '');
+
+    $('stat-camera-lock').textContent = state.cameraLocked ? 'LOCKED' : 'UNLOCKED';
+    $('pill-camera-lock').className = 'pill ' + (state.cameraLocked ? 'ok' : '');
+
+    $('stat-dart-detection').textContent = state.cameraLocked ? 'ENABLED' : 'LOCKED';
+    $('pill-dart-detection').className = 'pill ' + (state.cameraLocked ? 'ok' : 'warn');
+
+    var darts = topDarts();
+    $('stat-dart-count').textContent = darts.length + ' / ' + MAX_DARTS_DISPLAYED;
+    $('darts-list').innerHTML = darts.map(function (d, i) {
+      var conf = (d.confidence === undefined || d.confidence === null) ? 'N/A' : d.confidence.toFixed(3);
+      var score = scoreDart(d);
+      var scoreText = score ? score.label : 'not calibrated yet — press CALIBRATE';
+      return '<div>Dart ' + (i + 1) + ': tip ' + d.x.toFixed(1) + ', ' + d.y.toFixed(1) + ' — ' + scoreText + ' — confidence ' + conf + '</div>';
+    }).join('') || '<div style="color:#5c6773">No darts detected.</div>';
+
+    renderDartModelPanel();
+    if (state.debugOn) renderDebugPanel();
+  }
+
+  // Always-visible (not behind DEBUG) diagnostic panel: shows whether the
+  // dart model actually ran this frame and exactly what it produced, so a
+  // post-lock false positive can be told apart from a pre-lock phantom that
+  // simply can't happen anymore because the model was never invoked.
+  function renderDartModelPanel() {
+    var lines = ['DART MODEL', 'Model: ' + activeAdapter.getActiveModel().label + ' (' + activeAdapter.getActiveModel().version + ')', 'Min confidence: ' + activeAdapter.confidenceThreshold.toFixed(2), 'Status: ' + (state.cameraLocked ? 'ENABLED' : 'LOCKED')];
+    if (state.cameraLocked) {
+      lines.push('Detections: ' + state.lastDetections.length);
+      if (state.lastDetections.length) {
+        lines.push('');
+        state.lastDetections.forEach(function (d, i) {
+          lines.push('#' + (i + 1) + ' x=' + d.x.toFixed(1) + ' y=' + d.y.toFixed(1) + ' conf=' + d.confidence.toFixed(3));
+        });
+      }
+    } else {
+      lines.push('Detections: 0 (model not running)');
+    }
+    $('dart-model-panel').textContent = lines.join('\n');
+  }
+
+  function renderDebugPanel() {
+    var vt = videoTrack;
+    var settings = vt ? vt.getSettings() : {};
+    var geo = activeBoardGeometry();
+    var rows = [
+      ['camera resolution', settings.width && settings.height ? (settings.width + ' x ' + settings.height) : '—'],
+      ['zoom', settings.zoom !== undefined ? settings.zoom.toFixed(1) + 'x' : '—'],
+      ['board centre', geo && geo.center ? geo.center.x.toFixed(1) + ', ' + geo.center.y.toFixed(1) : '—'],
+      ['board radius (x, y)', geo && geo.radiusX ? geo.radiusX.toFixed(1) + ', ' + geo.radiusY.toFixed(1) : '—'],
+      ['board orientation (rad)', geo && geo.rotationRadians !== undefined ? geo.rotationRadians.toFixed(3) : '—'],
+      ['board detection status', state.boardStatus],
+      ['board confidence', geo && geo.confidence !== undefined ? geo.confidence.toFixed(3) : '—'],
+      ['ring points detected (of 20 expected)', geo && geo.ringPoints ? geo.ringPoints.length : '—'],
+      ['detected hue peak (red)', geo && geo.huePeaks ? geo.huePeaks.red + ' (0-179 scale; true red ~0-10 or ~170-179)' : '—'],
+      ['detected hue peak (green)', geo && geo.huePeaks ? geo.huePeaks.green + ' (0-179 scale; true green ~45-85)' : '—'],
+      ['ring hue coverage', geo && geo.ringHueCoverage !== undefined ? (geo.ringHueCoverage * 100).toFixed(1) + '%' : '—'],
+      ['board geometry time', state.lastBoardMs.toFixed(1) + ' ms'],
+      ['— scoring calibration —', ''],
+      ['CALIBRATION MODE', state.calibrationMode === '4point' ? '4-POINT' : '20-POINT'],
+      ['homography status', state.homography ? 'CALIBRATED' : 'not calibrated'],
+      ['last CALIBRATE result', state.lastCalibrationResult ? (state.lastCalibrationResult.homography ? 'PASS' : 'FAIL -- ' + state.lastCalibrationResult.reason) : '—']
+    ];
+
+    if (state.calibrationMode === '4point') {
+      rows.push(['— 4-point landmarks —', '']);
+      var fp = geo && geo.fourPointLandmarks ? geo.fourPointLandmarks.landmarks : null;
+      if (fp) {
+        fp.forEach(function (l) {
+          var label = l.found
+            ? 'PASS  (' + l.x.toFixed(1) + ', ' + l.y.toFixed(1) + ', ' + l.diffDeg.toFixed(1) + '° from expected)'
+            : 'FAIL  (' + l.reason + ')';
+          rows.push([l.name, label]);
+        });
+      } else {
+        rows.push(['1/20, 6/10, 3/19, 11/14', '—']);
+      }
+    } else {
+      rows.push(['ring points merged (noise cleanup, last CALIBRATE)', state.lastRingPointsMerged]);
+    }
+
+    rows = rows.concat([
+      ['— dart detector —', ''],
+      ['detector', activeAdapter.name],
+      ['model version / sha256', activeAdapter.getActiveModel().version + ' / ' + activeAdapter.getActiveModel().sha256.slice(0, 12)],
+      ['detector status', activeAdapter.isReady() ? 'READY' : 'LOADING'],
+      ['model input dimensions', activeAdapter.inputWidth + ' x ' + activeAdapter.inputHeight],
+      ['inference time', state.lastInferenceMs.toFixed(1) + ' ms'],
+      ['processing FPS (draw loop)', state.processingFps.toFixed(1)],
+      ['darts detected (max 3)', topDarts().length]
+    ]);
+
+    topDarts().forEach(function (d, i) {
+      var bp = boardPositionOf(d);
+      var score = scoreDart(d);
+      var n = i + 1;
+      rows.push(['dart ' + n + ' tip x, y', d.x.toFixed(1) + ', ' + d.y.toFixed(1)]);
+      rows.push(['dart ' + n + ' confidence', d.confidence.toFixed(3)]);
+      rows.push(['dart ' + n + ' board X, Y', bp ? bp.x.toFixed(3) + ', ' + bp.y.toFixed(3) : 'not calibrated']);
+      rows.push(['dart ' + n + ' score', score ? score.label : '—']);
+    });
+
+    $('debug-panel').innerHTML = rows.map(function (r) {
+      return '<div class="row"><span>' + r[0] + '</span><span>' + r[1] + '</span></div>';
+    }).join('');
+  }
+
+  // =========================================================================
+  // 8b. EXPORT -- bundles the current image plus a JSON log of everything
+  // detected into a single .zip download, for sending elsewhere to diagnose
+  // a detection problem from real data. Ported verbatim from the local test
+  // bench, trimmed for the DartFeed-only detector (no bbox/class fields --
+  // those were Dart Sense-specific) and extended with the HUE DIAG fields
+  // (huePeaks/ringHueCoverage/hueDiagPoints) added above, so an exported zip
+  // carries enough to diagnose a failed calibration without needing a live
+  // HUE DIAG session.
+  // =========================================================================
+  function buildDartDebugInfo(d) {
+    var bp = boardPositionOf(d);
+    var score = scoreDart(d);
+    return {
+      type: d.type || 'unknown',
+      coordinate_label: 'DartFeed predicted tip',
+      confidence: d.confidence,
+      coordinate_passed_to_homography: { x: d.x, y: d.y },
+      board_xy: bp,
+      radius: bp ? Math.hypot(bp.x, bp.y) : null,
+      angle_deg: bp ? (Math.atan2(bp.x, -bp.y) * 180 / Math.PI + 360) % 360 : null,
+      score: score ? score.label : null
+    };
+  }
+
+  function buildExportPayload() {
+    var dims = activeSourceDims();
+    var geo = activeBoardGeometry();
+    var vt = videoTrack;
+    var settings = vt ? vt.getSettings() : null;
+    var darts = topDarts();
+    return {
+      exported_at: new Date().toISOString(),
+      app: 'DartFeed AI GitHub Test',
+      source_mode: state.mode,
+      source_dimensions: { width: dims.w, height: dims.h },
+      camera: settings ? { resolution: settings.width + 'x' + settings.height, zoom: settings.zoom } : null,
+      model: {
+        name: activeAdapter.name,
+        key: activeAdapter.getActiveModel().key,
+        version: activeAdapter.getActiveModel().version,
+        sha256: activeAdapter.getActiveModel().sha256,
+        input_dimensions: activeAdapter.inputWidth + 'x' + activeAdapter.inputHeight,
+        confidence_threshold: activeAdapter.confidenceThreshold,
+        iou_threshold: activeAdapter.iouThreshold
+      },
+      board_ring: {
+        status: state.boardStatus,
+        confidence: geo ? geo.confidence : null,
+        point_count_of_20_expected: geo ? geo.pointCount : null,
+        center: geo ? geo.center : null,
+        radius_x: geo ? geo.radiusX : null,
+        radius_y: geo ? geo.radiusY : null,
+        rotation_radians: geo ? geo.rotationRadians : null
+      },
+      hue_diagnostic: {
+        peak_red: geo && geo.huePeaks ? geo.huePeaks.red : null,
+        peak_green: geo && geo.huePeaks ? geo.huePeaks.green : null,
+        coverage: geo ? geo.ringHueCoverage : null,
+        points: geo && geo.hueDiagPoints ? geo.hueDiagPoints : null
+      },
+      calibration_homography: {
+        calibration_mode: state.calibrationMode === '4point' ? '4-point' : '20-point',
+        calibrated: !!state.homography,
+        calibration_corners_board_angle_deg: state.lastCalibrationCorners.map(function (c) {
+          return Math.round((c.boardAngle !== undefined ? c.boardAngle * 180 / Math.PI : c.boardAngleDeg));
+        }),
+        four_point_landmarks: geo && geo.fourPointLandmarks ? geo.fourPointLandmarks.landmarks : null,
+        homography_matrix: state.homography
+      },
+      displayed_darts: darts.map(buildDartDebugInfo),
+      raw_model_detections_all_classes: state.lastDetections,
+      timing: {
+        last_board_geometry_ms: state.lastBoardMs,
+        last_inference_ms: state.lastInferenceMs,
+        processing_fps: state.processingFps
+      }
+    };
+  }
+
+  var JSZIP_URL = 'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js';
+  var jszipLoadPromise = null;
+  function ensureJsZip() {
+    if (window.JSZip) return Promise.resolve();
+    if (jszipLoadPromise) return jszipLoadPromise;
+    jszipLoadPromise = new Promise(function (resolve, reject) {
+      var s = document.createElement('script');
+      s.src = JSZIP_URL;
+      s.onload = resolve;
+      s.onerror = function () { reject(new Error('Could not load JSZip from CDN.')); };
+      document.head.appendChild(s);
+    });
+    return jszipLoadPromise;
+  }
+
+  // Exported images are downscaled to this max dimension -- the JSON payload
+  // still records every coordinate at full native precision regardless.
+  var EXPORT_IMAGE_MAX_DIMENSION = 1600;
+
+  function exportResults() {
+    var btn = $('btn-export');
+    btn.disabled = true;
+    var originalText = btn.textContent;
+    btn.textContent = 'EXPORTING…';
+    exportInProgress = true;
+    var dims = activeSourceDims();
+    var exportScale = Math.min(1, EXPORT_IMAGE_MAX_DIMENSION / Math.max(dims.w, dims.h));
+    var exportW = Math.round(dims.w * exportScale), exportH = Math.round(dims.h * exportScale);
+
+    var snapCanvas = document.createElement('canvas');
+    snapCanvas.width = exportW; snapCanvas.height = exportH;
+    snapCanvas.getContext('2d').drawImage(activeSourceEl(), 0, 0, exportW, exportH);
+
+    // A second image with the live overlay (board ellipse, hue-diag dots,
+    // score wires, dart markers) composited on top, exactly as on screen.
+    var annotatedCanvas = document.createElement('canvas');
+    annotatedCanvas.width = exportW; annotatedCanvas.height = exportH;
+    var annotatedCtx = annotatedCanvas.getContext('2d');
+    annotatedCtx.drawImage(snapCanvas, 0, 0);
+    annotatedCtx.drawImage(overlay, 0, 0, exportW, exportH);
+
+    var stamp = Date.now();
+    Promise.all([
+      ensureJsZip(),
+      new Promise(function (resolve) { snapCanvas.toBlob(resolve, 'image/jpeg', 0.85); }),
+      new Promise(function (resolve) { annotatedCanvas.toBlob(resolve, 'image/jpeg', 0.85); })
+    ]).then(function (results) {
+      var imageBlob = results[1];
+      var annotatedBlob = results[2];
+      var zip = new window.JSZip();
+      zip.file('dartfeed_ai_github_' + stamp + '.jpg', imageBlob);
+      zip.file('dartfeed_ai_github_' + stamp + '_annotated.jpg', annotatedBlob);
+      zip.file('dartfeed_ai_github_' + stamp + '.json', JSON.stringify(buildExportPayload(), null, 2));
+      return zip.generateAsync({ type: 'blob' });
+    }).then(function (zipBlob) {
+      var url = URL.createObjectURL(zipBlob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = 'dartfeed_ai_github_' + stamp + '.zip';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(function () { URL.revokeObjectURL(url); }, 10000);
+    }).catch(function (err) {
+      alert('Export failed: ' + err.message);
+      console.error('Export failed:', err);
+    }).finally(function () {
+      exportInProgress = false;
+      btn.disabled = false;
+      btn.textContent = originalText;
+    });
+  }
+
+  // =========================================================================
+  // 9. CONTROLS
+  // =========================================================================
+  $('btn-start').addEventListener('click', function () {
+    this.disabled = true;
+    $('stat-camera').textContent = 'STARTING…';
+    startCamera().catch(function (err) {
+      $('stat-camera').textContent = 'ERROR: ' + err.message;
+      $('pill-camera').className = 'pill bad';
+      $('btn-start').disabled = false;
+    });
+  });
+
+  // Unlocks dart detection and hands calibration control back to the user.
+  // Called by clearCalibration() (so every path that invalidates the
+  // homography also re-locks dart detection) and directly by UNLOCK /
+  // RE-CALIBRATE. Never touches board geometry/homography itself -- that's
+  // clearCalibration()'s job -- only the lock flag, live detections, and the
+  // buttons that must become available/unavailable as a result.
+  function unlockCamera() {
+    state.cameraLocked = false;
+    state.calibrationRequired = true;
+    state.lastDetections = [];
+    $('btn-lock-camera').disabled = true;
+    $('btn-unlock-camera').disabled = true;
+    $('btn-calibrate').disabled = false;
+    $('radio-calib-20point').disabled = false;
+    $('radio-calib-4point').disabled = false;
+    $('btn-compare-both').disabled = false;
+  }
+
+  function clearCalibration() {
+    state.homography = null;
+    state.inverseHomography = null;
+    state.calibratedGeometry = null;
+    state.lastCalibrationCorners = [];
+    if (state.boardStatus === 'CALIBRATED') state.boardStatus = 'DETECTED';
+    unlockCamera();
+    autoReset();   // a fresh cycle starts from zero: auto mode must re-prove a stable calibration before locking again
+  }
+
+  function enterCameraMode() {
+    state.mode = 'camera';
+    video.classList.remove('hidden');
+    photoImg.classList.add('hidden');
+    $('pill-source').classList.remove('hidden');
+    $('stat-source').textContent = 'CAMERA';
+    $('btn-export').disabled = false;
+    clearCalibration();
+    state.calibrationRequired = false; // fresh start, not a post-unlock re-calibrate
+    resizeOverlay();
+  }
+
+  function enterPhotoMode() {
+    state.mode = 'photo';
+    video.classList.add('hidden');
+    photoImg.classList.remove('hidden');
+    $('pill-source').classList.remove('hidden');
+    $('stat-source').textContent = 'PHOTO';
+    $('btn-calibrate').disabled = false;
+    $('btn-reset').disabled = false;
+    $('btn-export').disabled = false;
+    // Fresh detection state for the new image -- a stale board ellipse or
+    // dart marker from whatever was on screen before would be actively
+    // misleading overlaid on an unrelated photo.
+    state.boardStatus = 'SEARCHING';
+    state.boardGeometry = null;
+    state.calibratedGeometry = null;
+    state.lastDetections = [];
+    clearCalibration();
+    state.calibrationRequired = false; // fresh start, not a post-unlock re-calibrate
+    resizeOverlay();
+    boardTick();
+    modelTick();
+  }
+
+  // ---- LOAD PHOTO ----
+  // No camera permission needed -- works even where getUserMedia() is
+  // unavailable. See the source-abstraction comment above activeSourceEl()
+  // for why this exists alongside (not instead of) the live camera.
+  $('btn-load-photo').addEventListener('click', function () { photoInput.click(); });
+  photoInput.addEventListener('change', function (e) {
+    var file = e.target.files && e.target.files[0];
+    if (!file) return;
+    var url = URL.createObjectURL(file);
+    photoImg.onload = function () {
+      URL.revokeObjectURL(url);
+      enterPhotoMode();
+    };
+    photoImg.src = url;
+  });
+
+  // Applies a successful calibration result. Used by the CALIBRATE button and
+  // by the automatic calibration step -- one code path, so both are identical.
+  function commitCalibration(result, geo) {
+    state.homography = result.homography;
+    state.inverseHomography = result.inverseHomography;
+    state.lastCalibrationCorners = result.corners;
+    state.calibratedGeometry = geo;
+    state.boardStatus = 'CALIBRATED';
+    state.calibrationRequired = false;
+    // CALIBRATION PASS -- dart detection stays LOCKED until the camera is
+    // locked (LOCK CAMERA button, or the automatic lock after a stable calibration).
+    $('btn-lock-camera').disabled = false;
+  }
+
+  // Real calibration -- dispatches to whichever method state.calibrationMode
+  // names. If the selected method fails, it FAILS: no fallback to the
+  // other method exists.
+  $('btn-calibrate').addEventListener('click', function () {
+    var geo = activeBoardGeometry();
+    var result = state.calibrationMode === '4point'
+      ? computeCalibrationFromFourPoints(geo)
+      : computeCalibrationFromRing(geo);
+    state.lastCalibrationResult = result;
+    if (result.homography) {
+      commitCalibration(result, geo);
+    } else {
+      state.homography = null;
+      state.inverseHomography = null;
+      state.lastCalibrationCorners = [];
+      alert('CALIBRATION FAILED: ' + result.reason);
+    }
+  });
+
+  // LOCK CAMERA -- the only action in this page that is allowed to enable
+  // dart-model inference. Freezes the calibration/board geometry (boardTick
+  // stops touching it, see its own guard) and locks down the calibration
+  // controls so nothing can accidentally re-fit the geometry afterwards.
+  function lockCameraNow() {
+    state.cameraLocked = true;
+    $('btn-lock-camera').disabled = true;
+    $('btn-unlock-camera').disabled = false;
+    $('btn-calibrate').disabled = true;
+    $('radio-calib-20point').disabled = true;
+    $('radio-calib-4point').disabled = true;
+    $('btn-compare-both').disabled = true;
+  }
+
+  $('btn-lock-camera').addEventListener('click', function () {
+    if (!state.homography || state.boardStatus !== 'CALIBRATED') {
+      alert('Cannot lock: no successful calibration on record. Press CALIBRATE again first.');
+      return;
+    }
+    lockCameraNow();
+    setAutoStatus(auto.enabled ? 'Auto: locked (manually)' : 'Auto calibrate + lock: off');
+  });
+
+  // UNLOCK / RE-CALIBRATE -- stops dart inference immediately (modelTick's
+  // guard reads state.cameraLocked before every tick, and its own in-flight
+  // predict() discards stale results too), clears the live detections and
+  // the calibration, and hands control back for a fresh CALIBRATE + LOCK
+  // CAMERA cycle. Must be an explicit user action -- nothing else triggers it.
+  $('btn-unlock-camera').addEventListener('click', function () {
+    clearCalibration();
+  });
+
+  $('btn-reset').addEventListener('click', function () {
+    state.boardStatus = 'SEARCHING';
+    state.boardGeometry = null;
+    state.calibratedGeometry = null;
+    state.lastDetections = [];
+    clearCalibration();
+    state.calibrationRequired = false;
+  });
+
+  $('btn-debug').addEventListener('click', function () {
+    state.debugOn = !state.debugOn;
+    this.classList.toggle('active', state.debugOn);
+    $('debug-panel').classList.toggle('hidden', !state.debugOn);
+  });
+
+  $('btn-hue-diag').addEventListener('click', function () {
+    state.hueDiagOn = !state.hueDiagOn;
+    this.classList.toggle('active', state.hueDiagOn);
+  });
+
+  $('chk-show-score-numbers').addEventListener('change', function () {
+    state.showScoreNumbers = this.checked;
+  });
+  $('conf-select').addEventListener('change', function () {
+    DartFeedTipModelAdapter.setConfidenceThreshold(parseFloat(this.value));
+    state.lastDetections = [];   // next inference frame re-applies the new threshold
+  });
+  $('chk-auto-calibrate').addEventListener('change', function () {
+    auto.enabled = this.checked;
+    auto.streak = 0; auto.ref = null;
+    setAutoStatus(auto.enabled ? (state.cameraLocked ? 'Auto: locked' : 'Auto: searching for the board…') : 'Auto calibrate + lock: off (use CALIBRATE then LOCK CAMERA)');
+  });
+  $('radio-calib-20point').addEventListener('change', function () {
+    if (this.checked) state.calibrationMode = '20point';
+  });
+  $('radio-calib-4point').addEventListener('change', function () {
+    if (this.checked) state.calibrationMode = '4point';
+  });
+  $('btn-compare-both').addEventListener('click', runCompareBoth);
+  $('btn-export').addEventListener('click', exportResults);
+
+  // =========================================================================
+  // 10. BOOT
+  // =========================================================================
+  OpenCVLoader.load().catch(function (e) { console.error('OpenCV failed to load:', e); });
+
+  $('stat-model').textContent = 'LOADING';
+  DartFeedTipModelAdapter.load().then(function () {
+    $('stat-model').textContent = 'READY';
+    $('pill-model').className = 'pill ok';
+    showActiveModel();   // the fallback model may be active instead of the default
+    if (DartFeedTipModelAdapter.getLoadNote()) $('model-select-status').textContent = DartFeedTipModelAdapter.getLoadNote();
+  }).catch(function (err) {
+    $('stat-model').textContent = 'ERROR: ' + err.message;
+    $('pill-model').className = 'pill bad';
+    console.error('DartFeed model failed to load:', err);
+  });
+
+  // ---- model selector: switches ONLY the network weights. Calibration, board
+  // geometry, preprocessing, thresholds, NMS and matching code are shared and untouched.
+  var modelSelect = $('model-select');
+  function showActiveModel() {
+    var m = DartFeedTipModelAdapter.getActiveModel();
+    $('stat-active-model').textContent = m.label;
+    modelSelect.value = m.key;
+  }
+  showActiveModel();
+  modelSelect.addEventListener('change', function () {
+    var prev = DartFeedTipModelAdapter.getActiveModel();
+    var key = modelSelect.value;
+    if (key === prev.key) return;
+    var target = DartFeedTipModelAdapter.models[key];
+    modelSelect.disabled = true;
+    $('stat-model').textContent = 'LOADING';
+    $('pill-model').className = 'pill';
+    $('model-select-status').textContent = 'loading ' + target.label + '…';
+    DartFeedTipModelAdapter.setActiveModel(key).then(function () {
+      state.lastDetections = [];   // never show the previous model's detections under the new model's name
+      showActiveModel();
+      $('stat-model').textContent = 'READY';
+      $('pill-model').className = 'pill ok';
+      $('model-select-status').textContent = 'now using ' + target.label + ' (' + target.version + ')';
+    }).catch(function (err) {
+      console.error('Model switch failed:', err);
+      showActiveModel();   // revert the selector to the model that is still active
+      var stillReady = DartFeedTipModelAdapter.isReady();
+      $('stat-model').textContent = stillReady ? 'READY' : 'ERROR: ' + err.message;
+      $('pill-model').className = 'pill ' + (stillReady ? 'ok' : 'bad');
+      $('model-select-status').textContent = 'could not load ' + target.label + ': ' + err.message + ' — still using ' + prev.label;
+    }).then(function () {
+      modelSelect.disabled = false;
+    });
+  });
+
+  setInterval(boardTick, 400);
+  setInterval(modelTick, 250);
+  requestAnimationFrame(drawLoop);
+
+})();
+</script>
+</body>
+</html>
